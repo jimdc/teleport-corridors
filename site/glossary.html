@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Glossary · NYC Transit Atlas</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="title">
+        <a class="brand" href="./">NYC Transit Atlas</a>
+        <span class="status">Guide</span>
+      </div>
+
+      <nav class="nav">
+        <a class="nav-link" href="./">Map</a>
+        <a class="nav-link" href="./centrality.html">Centrality</a>
+        <a class="nav-link" href="./living.html">Living</a>
+        <a class="nav-link" href="./teleport-corridors.html">Teleport corridors</a>
+        <a class="nav-link is-active" href="./glossary.html">Glossary</a>
+      </nav>
+
+      <div class="controls"></div>
+    </header>
+
+    <main class="page">
+      <section class="page-card">
+        <h1 class="page-title">Glossary</h1>
+        <p class="page-subtitle">A quick guide to the app’s terms and modes.</p>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">Core Concepts</h2>
+        <div class="glossary">
+          <div class="glossary-item">
+            <div class="glossary-term">Origin</div>
+            <div class="glossary-def">The neighborhood you start from on the map page.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Destination (hover / pinned)</div>
+            <div class="glossary-def">
+              Hover any neighborhood to preview a route. <span class="mono">Shift+click</span> pins a destination so it stays.
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Time profile (AM / PM / Weekend)</div>
+            <div class="glossary-def">
+              Separate “typical” schedules. Same geography, different travel times (rush hour vs off-peak patterns).
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Max minutes</div>
+            <div class="glossary-def">The travel-time cutoff used for coloring, corridor overlays, and lists.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">Teleport Corridors</h2>
+        <div class="glossary">
+          <div class="glossary-item">
+            <div class="glossary-term">Hub</div>
+            <div class="glossary-def">
+              A “target” area you care about (Midtown, Downtown, W’burg, Downtown BK, LIC). The lists rank places relative to
+              the selected hub.
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Teleport corridor</div>
+            <div class="glossary-def">
+              A neighborhood-to-hub trip that looks far by distance but is unusually fast by subway.
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">“Minutes saved”</div>
+            <div class="glossary-def">
+              How much faster the subway trip is than a simple “expected travel speed” baseline for the same straight-line
+              distance. Higher = more “teleport-y”.
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">km/min</div>
+            <div class="glossary-def">Distance divided by minutes. Higher = faster relative to how far it is.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Spokes</div>
+            <div class="glossary-def">
+              The preview map draws “spokes” from the hub to candidate origins to suggest areas worth exploring.
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Top vs Clustered</div>
+            <div class="glossary-def">
+              <b>Top</b> shows the top-ranked individual neighborhoods. <b>Clustered</b> groups nearby origins and shows a
+              representative “best” corridor per cluster to avoid the list being dominated by one small area.
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Include short trips (&lt;6km)</div>
+            <div class="glossary-def">
+              Includes short-distance trips. When off, the rankings focus on “surprising” outer-borough corridors rather than
+              neighborhoods that are simply close.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">Living</h2>
+        <div class="glossary">
+          <div class="glossary-item">
+            <div class="glossary-term">Teleportness</div>
+            <div class="glossary-def">
+              A map metric that colors neighborhoods by “minutes saved” vs a baseline travel speed to a chosen hub (Midtown, LIC,
+              etc.). Higher = looks far but rides fast.
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Walk</div>
+            <div class="glossary-def">
+              Approximate walking minutes from the neighborhood centroid to its nearest subway stop. Shorter is better (brighter).
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Lines</div>
+            <div class="glossary-def">
+              Count of unique subway lines within ~650m. Higher = more “options” (useful for redundancy and easier transfers).
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Prefer longer trips (exclude &lt;6km)</div>
+            <div class="glossary-def">
+              Filters out very short hub trips so the ranking highlights outer-borough neighborhoods that are underrated by how far
+              they look on a map.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">Map Overlays</h2>
+        <div class="glossary">
+          <div class="glossary-item">
+            <div class="glossary-term">Corridors</div>
+            <div class="glossary-def">
+              A “spreading” overlay of route segments from the origin: thicker/stronger paths indicate more downstream stops on
+              the shortest-path tree.
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Isochrones</div>
+            <div class="glossary-def">
+              Contours for reachability (e.g. 15/30/45/60/90 minutes). Useful for seeing “what’s in range” at a glance.
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Labels / Compact names</div>
+            <div class="glossary-def">
+              Labels use side “rails” with leader lines (always on). Compact names shorten long neighborhood names to reduce clutter.
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

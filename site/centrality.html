@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Centrality · NYC Transit Atlas</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="centrality-page">
+    <header>
+      <div class="title">
+        <a class="brand" href="./">NYC Transit Atlas</a>
+        <span id="status" class="status">Loading…</span>
+      </div>
+
+      <nav class="nav">
+        <a class="nav-link" href="./">Map</a>
+        <a class="nav-link is-active" href="./centrality.html">Centrality</a>
+        <a class="nav-link" href="./living.html">Living</a>
+        <a class="nav-link" href="./teleport-corridors.html">Teleport corridors</a>
+        <a class="nav-link" href="./glossary.html">Glossary</a>
+      </nav>
+
+      <div class="goggles" aria-label="Map options">
+        <label class="toggle">
+          <input id="compactNames" type="checkbox" checked />
+          <span>Compact names</span>
+        </label>
+      </div>
+
+      <div class="controls">
+        <select id="viewMode" hidden>
+          <option value="time">Travel time</option>
+          <option value="centrality" selected>Centrality</option>
+        </select>
+        <label>
+          Max minutes
+          <input id="maxMinutes" type="range" min="15" max="180" step="5" value="90" />
+          <span id="maxMinutesLabel" class="mono">90</span>
+        </label>
+        <fieldset class="segmented" aria-label="Time profile">
+          <legend class="sr-only">Time profile</legend>
+          <label>
+            <input type="radio" name="profile" value="weekday_am" checked />
+            <span>AM</span>
+          </label>
+          <label>
+            <input type="radio" name="profile" value="weekday_pm" />
+            <span>PM</span>
+          </label>
+          <label>
+            <input type="radio" name="profile" value="weekend" />
+            <span>Weekend</span>
+          </label>
+        </fieldset>
+      </div>
+    </header>
+
+    <main>
+      <div id="map">
+        <svg id="mapSvg" role="img" aria-label="NYC neighborhoods centrality map"></svg>
+        <svg id="labelLeaders" aria-hidden="true"></svg>
+        <div id="labelRails" aria-hidden="true">
+          <div id="labelRailLeft" class="label-rail"></div>
+          <div id="labelRailRight" class="label-rail"></div>
+        </div>
+      </div>
+      <aside id="panel">
+        <div id="centralityPanel" class="panel-section">
+          <div class="panel-title">Centrality</div>
+          <div class="panel-hint">Higher = more “connected” (shorter trips to more places).</div>
+          <div class="panel-controls" style="margin-top:10px;">
+            <fieldset class="segmented compact" aria-label="Centrality metric">
+              <legend>Metric</legend>
+              <label>
+                <input type="radio" name="centralityMetric" value="hub" checked />
+                <span>To hub</span>
+              </label>
+              <label>
+                <input type="radio" name="centralityMetric" value="median_minutes" />
+                <span>Median</span>
+              </label>
+              <label>
+                <input type="radio" name="centralityMetric" value="transfer_penalized" />
+                <span>Low-transfer</span>
+              </label>
+            </fieldset>
+          </div>
+
+          <div id="hubControls" class="panel-controls" style="margin-top:8px;">
+            <div class="panel-hint">Hub: <span id="centralityHubName" class="mono">Midtown</span></div>
+            <div class="hub-groups" style="margin-top:6px;">
+              <fieldset class="segmented compact" aria-label="Manhattan hubs">
+                <legend>Manhattan hubs</legend>
+                <label>
+                  <input type="radio" name="centralityHubPreset" value="midtown" checked />
+                  <span><span class="boro-pill boro-manhattan">M</span> Midtown</span>
+                </label>
+                <label>
+                  <input type="radio" name="centralityHubPreset" value="downtown" />
+                  <span><span class="boro-pill boro-manhattan">M</span> Downtown</span>
+                </label>
+                <label>
+                  <input type="radio" name="centralityHubPreset" value="hudson_yards" />
+                  <span><span class="boro-pill boro-manhattan">M</span> Hudson Yds</span>
+                </label>
+              </fieldset>
+
+              <fieldset class="segmented compact" aria-label="Brooklyn hubs">
+                <legend>Brooklyn hubs</legend>
+                <label>
+                  <input type="radio" name="centralityHubPreset" value="williamsburg" />
+                  <span><span class="boro-pill boro-brooklyn">Bk</span> W'burg</span>
+                </label>
+                <label>
+                  <input type="radio" name="centralityHubPreset" value="downtown_bk" />
+                  <span><span class="boro-pill boro-brooklyn">Bk</span> Dt BK</span>
+                </label>
+                <label>
+                  <input type="radio" name="centralityHubPreset" value="greenpoint" />
+                  <span><span class="boro-pill boro-brooklyn">Bk</span> Greenpoint</span>
+                </label>
+                <label>
+                  <input type="radio" name="centralityHubPreset" value="bushwick" />
+                  <span><span class="boro-pill boro-brooklyn">Bk</span> Bushwick</span>
+                </label>
+              </fieldset>
+
+              <fieldset class="segmented compact" aria-label="Queens hubs">
+                <legend>Queens hubs</legend>
+                <label>
+                  <input type="radio" name="centralityHubPreset" value="lic" />
+                  <span><span class="boro-pill boro-queens">Q</span> LIC</span>
+                </label>
+                <label>
+                  <input type="radio" name="centralityHubPreset" value="astoria" />
+                  <span><span class="boro-pill boro-queens">Q</span> Astoria</span>
+                </label>
+              </fieldset>
+            </div>
+            <label style="margin-top:8px;">
+              Choose your own hub
+              <select id="centralityHubCustom"></select>
+            </label>
+          </div>
+          <div class="panel-title" style="margin-top:10px;">Most Central</div>
+          <ol id="centralTop"></ol>
+          <div class="panel-title" style="margin-top:10px;">Most Peripheral</div>
+          <ol id="centralBottom"></ol>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-title">Hover</div>
+          <div id="destName" class="panel-value">Hover a neighborhood</div>
+          <div id="routeSummary" class="panel-hint"></div>
+          <ol id="routeSteps"></ol>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-title">Legend</div>
+          <div class="legend-gradient centrality" aria-hidden="true"></div>
+          <div class="legend-scale">
+            <span class="mono">low</span>
+            <span class="mono">high</span>
+          </div>
+        </div>
+
+        <div id="originName" hidden></div>
+        <div id="originHint" hidden></div>
+        <div id="withinHint" hidden></div>
+        <ol id="closest" hidden></ol>
+        <ol id="farthest" hidden></ol>
+        <div id="legendMax" hidden></div>
+      </aside>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>NYC Transit Atlas</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="title">
+        <a class="brand" href="./">NYC Transit Atlas</a>
+        <span id="status" class="status">Loading…</span>
+      </div>
+
+      <nav class="nav">
+        <a class="nav-link is-active" href="./">Map</a>
+        <a class="nav-link" href="./centrality.html">Centrality</a>
+        <a class="nav-link" href="./living.html">Living</a>
+        <a class="nav-link" href="./teleport-corridors.html">Teleport corridors</a>
+        <a class="nav-link" href="./glossary.html">Glossary</a>
+      </nav>
+
+      <div class="goggles" aria-label="Map options">
+        <label class="toggle">
+          <input id="compactNames" type="checkbox" checked />
+          <span>Compact names</span>
+        </label>
+      </div>
+
+      <div class="controls">
+        <select id="viewMode" hidden>
+          <option value="time" selected>Travel time</option>
+          <option value="centrality">Centrality</option>
+        </select>
+        <label>
+          Max minutes
+          <input id="maxMinutes" type="range" min="15" max="180" step="5" value="90" />
+          <span id="maxMinutesLabel" class="mono">90</span>
+        </label>
+        <fieldset class="segmented" aria-label="Time profile">
+          <legend class="sr-only">Time profile</legend>
+          <label>
+            <input type="radio" name="profile" value="weekday_am" checked />
+            <span>AM</span>
+          </label>
+          <label>
+            <input type="radio" name="profile" value="weekday_pm" />
+            <span>PM</span>
+          </label>
+          <label>
+            <input type="radio" name="profile" value="weekend" />
+            <span>Weekend</span>
+          </label>
+        </fieldset>
+      </div>
+    </header>
+
+    <main>
+      <div id="map">
+        <svg id="mapSvg" role="img" aria-label="NYC neighborhoods transit-time map"></svg>
+        <svg id="labelLeaders" aria-hidden="true"></svg>
+        <div id="labelRails" aria-hidden="true">
+          <div id="labelRailLeft" class="label-rail"></div>
+          <div id="labelRailRight" class="label-rail"></div>
+        </div>
+      </div>
+      <aside id="panel">
+        <div class="panel-section">
+          <div class="panel-title">Origin</div>
+          <div id="originName" class="panel-value">Click a neighborhood</div>
+          <div id="originHint" class="panel-hint">
+            Colors show approximate subway minutes from the selected origin. Hover neighborhoods to preview routes.
+          </div>
+          <div class="panel-hint">Tip: Shift+click a neighborhood to pin it as a destination.</div>
+          <div id="withinHint" class="panel-hint"></div>
+        </div>
+
+        <div id="centralityPanel" class="panel-section" hidden>
+          <div class="panel-title">Centrality</div>
+          <div class="panel-hint">Higher = more “connected” (shorter trips to more places).</div>
+          <div class="panel-title" style="margin-top:10px;">Most Central</div>
+          <ol id="centralTop"></ol>
+          <div class="panel-title" style="margin-top:10px;">Most Peripheral</div>
+          <ol id="centralBottom"></ol>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-title">Destination</div>
+          <div id="destName" class="panel-value">Hover a neighborhood</div>
+          <div id="routeSummary" class="panel-hint"></div>
+          <ol id="routeSteps"></ol>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-title">Closest</div>
+          <ol id="closest"></ol>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-title">Farthest</div>
+          <ol id="farthest"></ol>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-title">Legend</div>
+          <div class="legend-gradient" aria-hidden="true"></div>
+          <div class="legend-scale">
+            <span class="mono">0</span>
+            <span id="legendMax" class="mono">90</span>
+          </div>
+          <div class="legend-row">
+            <span class="swatch unreachable"></span><span>Over max / unreachable</span>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

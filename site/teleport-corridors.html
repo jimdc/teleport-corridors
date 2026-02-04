@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Teleport Corridors · NYC Transit Atlas</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="title">
+        <a class="brand" href="./">NYC Transit Atlas</a>
+        <span id="status" class="status">Loading…</span>
+      </div>
+
+      <nav class="nav">
+        <a class="nav-link" href="./">Map</a>
+        <a class="nav-link" href="./centrality.html">Centrality</a>
+        <a class="nav-link" href="./living.html">Living</a>
+        <a class="nav-link is-active" href="./teleport-corridors.html">Teleport corridors</a>
+        <a class="nav-link" href="./glossary.html">Glossary</a>
+      </nav>
+
+      <div class="controls">
+        <label>
+          Max minutes
+          <input id="maxMinutes" type="range" min="15" max="180" step="5" value="90" />
+          <span id="maxMinutesLabel" class="mono">90</span>
+        </label>
+        <fieldset class="segmented" aria-label="Time profile">
+          <legend class="sr-only">Time profile</legend>
+          <label>
+            <input type="radio" name="profile" value="weekday_am" checked />
+            <span>AM</span>
+          </label>
+          <label>
+            <input type="radio" name="profile" value="weekday_pm" />
+            <span>PM</span>
+          </label>
+          <label>
+            <input type="radio" name="profile" value="weekend" />
+            <span>Weekend</span>
+          </label>
+        </fieldset>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="page-card">
+        <h1 class="page-title">Teleport corridors</h1>
+        <p class="page-subtitle">
+          Outer-borough trips that look far on a map but are fast to key hubs by subway. Ranked by “minutes saved” vs an expected
+          travel speed, and by <span class="mono">km/min</span>.
+        </p>
+      </section>
+
+      <section class="page-card preview-card">
+        <div class="preview-header">
+          <div>
+            <h2 class="card-title">Preview</h2>
+            <div id="previewTitle" class="preview-title">Hover a corridor card</div>
+            <div id="previewMeta" class="preview-meta mono"></div>
+          </div>
+          <div id="previewLine" class="preview-line mono" hidden></div>
+        </div>
+        <div class="preview-map">
+          <div id="miniTriptych" class="mini-triptych" aria-label="NYC corridor preview map (triptych)">
+            <svg id="miniManhattan" role="img" aria-label="Manhattan"></svg>
+            <svg id="miniBrooklyn" role="img" aria-label="Brooklyn"></svg>
+            <svg id="miniQueens" role="img" aria-label="Queens"></svg>
+            <svg id="miniOverlay" aria-hidden="true"></svg>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-grid">
+        <div class="page-card">
+          <div class="card-head">
+            <h2 class="card-title">Most underrated to <span id="hubLabelA">Midtown</span></h2>
+            <div class="card-controls">
+              <div class="card-controls-row" aria-label="Hub">
+                <div class="hub-groups hub-groups-right" aria-label="Hub">
+                  <fieldset class="segmented compact" aria-label="Manhattan hubs">
+                    <legend>Manhattan hubs</legend>
+                    <label>
+                      <input type="radio" name="hub" value="midtown" checked />
+                      <span><span class="boro-pill boro-manhattan">M</span> Midtown</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="hub" value="downtown" />
+                      <span><span class="boro-pill boro-manhattan">M</span> Downtown</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="hub" value="hudson_yards" />
+                      <span><span class="boro-pill boro-manhattan">M</span> Hudson Yds</span>
+                    </label>
+                  </fieldset>
+
+                  <fieldset class="segmented compact" aria-label="Brooklyn hubs">
+                    <legend>Brooklyn hubs</legend>
+                    <label>
+                      <input type="radio" name="hub" value="williamsburg" />
+                      <span><span class="boro-pill boro-brooklyn">Bk</span> W'burg</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="hub" value="downtown_bk" />
+                      <span><span class="boro-pill boro-brooklyn">Bk</span> Dt BK</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="hub" value="greenpoint" />
+                      <span><span class="boro-pill boro-brooklyn">Bk</span> Greenpoint</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="hub" value="bushwick" />
+                      <span><span class="boro-pill boro-brooklyn">Bk</span> Bushwick</span>
+                    </label>
+                  </fieldset>
+
+                  <fieldset class="segmented compact" aria-label="Queens hubs">
+                    <legend>Queens hubs</legend>
+                    <label>
+                      <input type="radio" name="hub" value="lic" />
+                      <span><span class="boro-pill boro-queens">Q</span> LIC</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="hub" value="astoria" />
+                      <span><span class="boro-pill boro-queens">Q</span> Astoria</span>
+                    </label>
+                  </fieldset>
+                </div>
+              </div>
+              <div class="card-controls-row" aria-label="Ranking controls">
+                <fieldset class="segmented compact" aria-label="Spokes">
+                  <legend>Spokes</legend>
+                  <label>
+                    <input type="radio" name="spokeMode" value="top" checked />
+                    <span>Top</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="spokeMode" value="clustered" />
+                    <span>Clustered</span>
+                  </label>
+                </fieldset>
+                <label class="toggle compact" title="When off, the rankings focus on outer-borough corridors rather than simply-close neighborhoods.">
+                  <input id="includeInner" type="checkbox" />
+                  <span>Include short trips (&lt;6km)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div id="underrated" class="corridor-list"></div>
+        </div>
+        <div class="page-card">
+          <h2 class="card-title">Fastest for distance to <span id="hubLabelB">Midtown</span></h2>
+          <div id="speed" class="corridor-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="teleport-corridors.js"></script>
+  </body>
+</html>
