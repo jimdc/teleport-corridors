@@ -14,8 +14,7 @@
 - **Living**: Teleportness, walk-to-subway, and line diversity views.
 
 ## Live site
-Once GitHub Pages finishes deploying, visit:
-`https://jimdc.github.io/teleport-corridors/`
+[![Live site](https://img.shields.io/badge/Live%20site-jimdc.github.io%2Fteleport--corridors-4F46E5?style=flat&logo=github)](https://jimdc.github.io/teleport-corridors/)
 
 ## Data + offline-first
 All data is precompiled from the MTA GTFS and neighborhood boundaries, then served as static files. No live APIs required once built.
