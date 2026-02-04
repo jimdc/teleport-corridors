@@ -9,15 +9,15 @@
   <body class="living-page">
     <header>
       <div class="title">
-        <a class="brand" href="./">NYC Transit Atlas</a>
+        <a class="brand" href="./">Teleport corridors</a>
         <span id="status" class="status">Loading…</span>
       </div>
 
       <nav class="nav">
         <a class="nav-link" href="./">Map</a>
         <a class="nav-link" href="./centrality.html">Centrality</a>
-        <a class="nav-link is-active" href="./living.html">Living</a>
-        <a class="nav-link" href="./teleport-corridors.html">Teleport corridors</a>
+        <a class="nav-link is-active" href="./living.html">Teleportness</a>
+        <a class="nav-link" href="./teleport-corridors.html">Corridors</a>
         <a class="nav-link" href="./glossary.html">Glossary</a>
       </nav>
 
@@ -67,27 +67,9 @@
 
       <aside id="panel">
         <div class="panel-section">
-          <div class="panel-title">Living</div>
+          <div class="panel-title">Teleportness</div>
           <div class="panel-hint">
             Tools for spotting outer-borough neighborhoods that “look far” on a map but feel close by subway.
-          </div>
-
-          <div class="panel-controls" style="margin-top:10px;">
-            <fieldset class="segmented compact" aria-label="Living metric">
-              <legend>Metric</legend>
-              <label>
-                <input type="radio" name="livingMetric" value="teleportness" checked />
-                <span>Teleportness</span>
-              </label>
-              <label>
-                <input type="radio" name="livingMetric" value="walk" />
-                <span>Walk</span>
-              </label>
-              <label>
-                <input type="radio" name="livingMetric" value="lines" />
-                <span>Lines</span>
-              </label>
-            </fieldset>
           </div>
 
           <div id="livingTeleportControls" class="panel-controls" style="margin-top:10px;">
@@ -153,7 +135,9 @@
             </label>
           </div>
 
-          <div id="livingMetricHint" class="panel-hint" style="margin-top:8px;"></div>
+          <div id="livingMetricHint" class="panel-hint" style="margin-top:8px;">
+            “Minutes saved” vs a baseline travel speed to your chosen hub. Higher = more “teleport-y”.
+          </div>
           <div class="panel-hint" style="margin-top:6px;">Tip: Click a neighborhood to pin hover details.</div>
         </div>
 
@@ -185,4 +169,3 @@
     <script type="module" src="app.js"></script>
   </body>
 </html>
-

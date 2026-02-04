@@ -3,13 +3,8 @@ const ISOCHRONE_MINUTES = [15, 30, 45, 60, 90, 120, 150, 180];
 const HUE_BY_LINE_ALWAYS_ON = true;
 const ISOCHRONES_ALWAYS_ON = true;
 const TELEPORT_EXPECTED_SPEED_KM_PER_MIN = 0.25; // ~15 km/h baseline for "minutes saved"
-const WALK_SPEED_M_PER_MIN = 80; // ~4.8 km/h
-const LINE_DIVERSITY_RADIUS_M = 650;
-
 const LIVING_COLORS = {
   teleportness: { r: 16, g: 185, b: 129 }, // emerald
-  walk: { r: 59, g: 130, b: 246 }, // blue
-  lines: { r: 245, g: 158, b: 11 }, // amber
 };
 
 function clamp01(v) {
@@ -705,7 +700,7 @@ async function main() {
   let hoveredRailId = null;
 
   // Living mode: map-level metrics aimed at “underrated to live in”.
-  let livingMetricKey = "teleportness"; // teleportness | walk | lines
+  let livingMetricKey = "teleportness"; // teleportness only (for now)
   let livingHubId = null;
   let livingHubLabel = "Midtown";
   let livingExcludeShortTrips = true;
@@ -717,11 +712,6 @@ async function main() {
   let livingDetailsById = new Map(); // id -> object with metric-specific details
   let livingStats = { min: 0, max: 1 };
   let livingRawStats = { min: 0, max: 1 };
-  let livingWalkMinutesById = new Map();
-  let livingWalkMetersById = new Map();
-  let livingWalkStopNameById = new Map();
-  let livingLineCountById = new Map();
-  let livingLinesById = new Map(); // id -> Array<string>
 
   const syncMaxLabel = () => {
     const v = String(getMaxMinutes());
@@ -888,67 +878,11 @@ async function main() {
       adjacency[from].push({ to, w: minutes, routeIdx: routeIdx ?? null });
     }
 
-    computeLivingStaticMetrics();
   };
 
   const nbById = () => new Map(neighborhoods.map((n) => [String(n.id), n]));
 
   const indexById = () => new Map(neighborhoods.map((n, i) => [String(n.id), i]));
-
-  function computeLivingStaticMetrics() {
-    livingWalkMinutesById = new Map();
-    livingWalkMetersById = new Map();
-    livingWalkStopNameById = new Map();
-    livingLineCountById = new Map();
-    livingLinesById = new Map();
-
-    if (!neighborhoods.length || !stops.length) return;
-
-    const routeLabels = routes.map((r) => String(r?.short_name || r?.id || ""));
-    const linesAtStop = new Array(stops.length).fill(0).map(() => new Set());
-
-    for (const e of edges) {
-      const [from, to, minutes, routeIdx] = e;
-      if (minutes == null) continue;
-      if (routeIdx == null) continue;
-      const label = routeLabels[routeIdx] || null;
-      if (!label) continue;
-      if (from != null && from >= 0 && from < linesAtStop.length) linesAtStop[from].add(label);
-      if (to != null && to >= 0 && to < linesAtStop.length) linesAtStop[to].add(label);
-    }
-
-    for (const n of neighborhoods) {
-      const id = String(n.id);
-      const c = n?.centroid;
-      if (!Array.isArray(c) || c.length < 2) continue;
-      const lat = Number(c[0]);
-      const lon = Number(c[1]);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-
-      const si = n?.stop_index;
-      if (si != null && si >= 0 && si < stops.length) {
-        const st = stops[si];
-        const dM = haversineKm([lat, lon], [Number(st.lat), Number(st.lon)]) * 1000;
-        if (Number.isFinite(dM)) {
-          livingWalkMetersById.set(id, Math.round(dM));
-          livingWalkMinutesById.set(id, Math.round((dM / WALK_SPEED_M_PER_MIN) * 10) / 10);
-          livingWalkStopNameById.set(id, String(st.name || st.id || ""));
-        }
-      }
-
-      const lines = new Set();
-      for (let s = 0; s < stops.length; s++) {
-        const st = stops[s];
-        const dM = haversineKm([lat, lon], [Number(st.lat), Number(st.lon)]) * 1000;
-        if (!Number.isFinite(dM)) continue;
-        if (dM > LINE_DIVERSITY_RADIUS_M) continue;
-        for (const l of linesAtStop[s]) lines.add(l);
-      }
-      const lineList = Array.from(lines).filter(Boolean).sort((a, b) => a.localeCompare(b));
-      livingLinesById.set(id, lineList);
-      livingLineCountById.set(id, lineList.length);
-    }
-  }
 
   const setCentralityFromScores = ({ label, higherIsBetter, scoresByIndex, rawUnit }) => {
     centralityLabel = label || "Centrality";
@@ -1182,51 +1116,6 @@ async function main() {
     const rawScores = new Array(neighborhoods.length).fill(null);
     const details = new Map();
 
-    if (livingMetricKey === "walk") {
-      for (let i = 0; i < neighborhoods.length; i++) {
-        const id = String(neighborhoods[i].id);
-        const m = livingWalkMinutesById.get(id);
-        if (m == null || !Number.isFinite(m)) continue;
-        rawScores[i] = m;
-        details.set(id, {
-          metric: "walk",
-          walk_minutes: m,
-          walk_meters: livingWalkMetersById.get(id) ?? null,
-          stop_name: livingWalkStopNameById.get(id) ?? null,
-        });
-      }
-      setLivingFromRawScores({
-        label: "Walk to subway",
-        higherIsBetter: false,
-        rawScoresByIndex: rawScores,
-        colorKey: "walk",
-        detailsById: details,
-      });
-      return;
-    }
-
-    if (livingMetricKey === "lines") {
-      for (let i = 0; i < neighborhoods.length; i++) {
-        const id = String(neighborhoods[i].id);
-        const n = livingLineCountById.get(id);
-        if (n == null || !Number.isFinite(n)) continue;
-        rawScores[i] = n;
-        details.set(id, {
-          metric: "lines",
-          line_count: n,
-          lines: livingLinesById.get(id) || [],
-        });
-      }
-      setLivingFromRawScores({
-        label: `Lines (≤${LINE_DIVERSITY_RADIUS_M}m)`,
-        higherIsBetter: true,
-        rawScoresByIndex: rawScores,
-        colorKey: "lines",
-        detailsById: details,
-      });
-      return;
-    }
-
     // Teleportness: minutes saved vs baseline speed to the selected hub.
     const hubId = livingHubId ? String(livingHubId) : null;
     if (!hubId || !minutesMatrix) {
@@ -1303,8 +1192,7 @@ async function main() {
     const hubNameEl = document.getElementById("livingHubName");
     const hubCustomEl = document.getElementById("livingHubCustom");
     const excludeShortEl = document.getElementById("livingExcludeShort");
-
-    if (!metricRadios.length) return;
+    const hasMetricRadios = metricRadios.length > 0;
 
     // Populate custom hub dropdown (tri-borough only).
     if (hubCustomEl) {
@@ -1345,9 +1233,11 @@ async function main() {
     }
 
     const loadUiPrefs = () => {
-      const metric = localStorage.getItem("atlas.livingMetric") || "teleportness";
-      const m = metricRadios.find((r) => r.value === metric);
-      if (m) m.checked = true;
+      if (hasMetricRadios) {
+        const metric = localStorage.getItem("atlas.livingMetric") || "teleportness";
+        const m = metricRadios.find((r) => r.value === metric);
+        if (m) m.checked = true;
+      }
 
       const preset = localStorage.getItem("atlas.livingHubPreset") || "midtown";
       const p = hubPresetRadios.find((r) => r.value === preset);
@@ -1361,24 +1251,22 @@ async function main() {
     };
 
     livingApplyUi = () => {
-      livingMetricKey = metricRadios.find((r) => r.checked)?.value || "teleportness";
-      if (hubControlsEl) hubControlsEl.hidden = livingMetricKey !== "teleportness";
+      livingMetricKey = "teleportness";
+      if (hubControlsEl) hubControlsEl.hidden = false;
 
-      if (livingMetricKey === "teleportness") {
-        const presetKey = hubPresetRadios.find((r) => r.checked)?.value || "midtown";
-        const presetMeta = presetHubs.find((h) => h.key === presetKey);
-        const presetId = livingPresetIdByKey.get(presetKey) || null;
-        const customId = hubCustomEl?.value ? String(hubCustomEl.value) : "";
-        const useId = customId || presetId || null;
-        const useLabel = customId
-          ? (nbById().get(customId)?.name || customId)
-          : presetMeta?.label || presetKey;
+      const presetKey = hubPresetRadios.find((r) => r.checked)?.value || "midtown";
+      const presetMeta = presetHubs.find((h) => h.key === presetKey);
+      const presetId = livingPresetIdByKey.get(presetKey) || null;
+      const customId = hubCustomEl?.value ? String(hubCustomEl.value) : "";
+      const useId = customId || presetId || null;
+      const useLabel = customId
+        ? (nbById().get(customId)?.name || customId)
+        : presetMeta?.label || presetKey;
 
-        livingHubId = useId;
-        livingHubLabel = String(useLabel || "");
-        if (hubNameEl) hubNameEl.textContent = livingHubLabel;
-        livingExcludeShortTrips = !!excludeShortEl?.checked;
-      }
+      livingHubId = useId;
+      livingHubLabel = String(useLabel || "");
+      if (hubNameEl) hubNameEl.textContent = livingHubLabel;
+      livingExcludeShortTrips = !!excludeShortEl?.checked;
 
       applyLivingMetric();
       restyle();
@@ -1937,7 +1825,7 @@ async function main() {
     lastRun = null;
     restyle();
     updateListsAndDirections();
-    setStatus(`ready (${svgIndex.pathById.size} neighborhoods)`);
+    setStatus(`${svgIndex.pathById.size} nabes loaded.`);
     renderLabels();
   };
 
@@ -2184,30 +2072,13 @@ async function main() {
       legendGradEl.style.background = `linear-gradient(90deg, rgba(${rgb.r},${rgb.g},${rgb.b},0.0), rgba(${rgb.r},${rgb.g},${rgb.b},0.90))`;
     }
 
-    const fmtNum = (v) => (v == null || !Number.isFinite(v) ? "—" : String(v));
-
-    if (livingMetricKey === "teleportness") {
-      if (hintEl) {
-        hintEl.textContent = `“Minutes saved” vs a baseline speed to ${livingHubLabel || "the hub"}. Higher = more “teleport-y”.`;
-      }
-      if (topTitleEl) topTitleEl.textContent = `Most teleport-y to ${livingHubLabel || "hub"}`;
-      if (botTitleEl) botTitleEl.textContent = `Least teleport-y to ${livingHubLabel || "hub"}`;
-      if (legendLeftEl) legendLeftEl.textContent = formatSignedMinutes(livingRawStats.min);
-      if (legendRightEl) legendRightEl.textContent = formatSignedMinutes(livingRawStats.max);
-    } else if (livingMetricKey === "walk") {
-      if (hintEl) hintEl.textContent = "Minutes to walk from the neighborhood centroid to its nearest subway stop. Shorter is better.";
-      if (topTitleEl) topTitleEl.textContent = "Shortest walk to subway";
-      if (botTitleEl) botTitleEl.textContent = "Longest walk to subway";
-      // More color = shorter walk (inverted raw).
-      if (legendLeftEl) legendLeftEl.textContent = `${fmtNum(livingRawStats.max)} min`;
-      if (legendRightEl) legendRightEl.textContent = `${fmtNum(livingRawStats.min)} min`;
-    } else if (livingMetricKey === "lines") {
-      if (hintEl) hintEl.textContent = `Unique subway lines within ~${LINE_DIVERSITY_RADIUS_M}m walk. More lines = more options.`;
-      if (topTitleEl) topTitleEl.textContent = "Most line diversity";
-      if (botTitleEl) botTitleEl.textContent = "Least line diversity";
-      if (legendLeftEl) legendLeftEl.textContent = `${fmtNum(livingRawStats.min)} lines`;
-      if (legendRightEl) legendRightEl.textContent = `${fmtNum(livingRawStats.max)} lines`;
+    if (hintEl) {
+      hintEl.textContent = `“Minutes saved” vs a baseline speed to ${livingHubLabel || "the hub"}. Higher = more “teleport-y”.`;
     }
+    if (topTitleEl) topTitleEl.textContent = `Most teleport-y to ${livingHubLabel || "hub"}`;
+    if (botTitleEl) botTitleEl.textContent = `Least teleport-y to ${livingHubLabel || "hub"}`;
+    if (legendLeftEl) legendLeftEl.textContent = formatSignedMinutes(livingRawStats.min);
+    if (legendRightEl) legendRightEl.textContent = formatSignedMinutes(livingRawStats.max);
 
     const rows = neighborhoods
       .map((n) => {
@@ -2224,18 +2095,8 @@ async function main() {
 
     const fmtRow = (r) => {
       const d = livingDetailsById.get(String(r.id)) || {};
-      if (livingMetricKey === "teleportness") {
-        const line = d.first_line ? ` · ${d.first_line}` : "";
-        return `${r.name} — ${formatSignedMinutes(Number(r.raw))} saved · ${d.minutes ?? "—"} min${line}`;
-      }
-      if (livingMetricKey === "walk") {
-        const stop = d.stop_name ? ` · ${d.stop_name}` : "";
-        return `${r.name} — ${Number(r.raw).toFixed(1)} min${stop}`;
-      }
-      if (livingMetricKey === "lines") {
-        return `${r.name} — ${Math.round(Number(r.raw))} lines`;
-      }
-      return `${r.name} — ${r.raw}`;
+      const line = d.first_line ? ` · ${d.first_line}` : "";
+      return `${r.name} — ${formatSignedMinutes(Number(r.raw))} saved · ${d.minutes ?? "—"} min${line}`;
     };
 
     setList(topEl, rows.slice(0, 10).map(fmtRow));
@@ -2259,24 +2120,9 @@ async function main() {
       return;
     }
 
-    if (d.metric === "teleportness") {
-      const line = d.first_line ? ` · ${d.first_line}` : "";
-      hoverMetaEl.textContent = `${d.minutes} min · ${d.distance_km} km · ${formatSignedMinutes(d.minutes_saved)} saved${line}`;
-      hoverExtraEl.textContent = `expected ${d.expected_minutes} min`;
-      return;
-    }
-
-    if (d.metric === "walk") {
-      const meters = d.walk_meters != null ? ` · ${d.walk_meters} m` : "";
-      hoverMetaEl.textContent = `${Number(d.walk_minutes).toFixed(1)} min walk${meters}`;
-      hoverExtraEl.textContent = d.stop_name ? `to ${d.stop_name}` : "";
-      return;
-    }
-
-    if (d.metric === "lines") {
-      hoverMetaEl.textContent = `${Math.round(Number(d.line_count))} lines within ${LINE_DIVERSITY_RADIUS_M} m`;
-      hoverExtraEl.textContent = (Array.isArray(d.lines) ? d.lines : []).join(" ");
-    }
+    const line = d.first_line ? ` · ${d.first_line}` : "";
+    hoverMetaEl.textContent = `${d.minutes} min · ${d.distance_km} km · ${formatSignedMinutes(d.minutes_saved)} saved${line}`;
+    hoverExtraEl.textContent = `expected ${d.expected_minutes} min`;
   };
 
   const renderCentralityPanel = () => {
