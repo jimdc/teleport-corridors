@@ -314,6 +314,16 @@ fieldset.segmented span {
   gap: 6px;
 }
 
+fieldset.segmented label.cartogram-option {
+  overflow: visible;
+}
+
+fieldset.segmented label.cartogram-option .cartogram-inline,
+fieldset.segmented label.cartogram-option .cartogram-inline span {
+  padding: 0;
+  font-size: 11px;
+}
+
 fieldset.segmented input:checked + span {
   background: rgba(99, 102, 241, 0.14);
   color: rgba(15, 23, 42, 0.9);
@@ -370,11 +380,20 @@ main {
 }
 
 .rail-label.is-hub {
-  color: rgba(15, 23, 42, 0.82);
+  color: rgba(2, 6, 23, 0.9);
+  font-weight: 800;
+  font-size: 13px;
 }
 
 .rail-label.is-active-hub {
   color: rgba(2, 6, 23, 0.95);
+  font-weight: 850;
+  font-size: 14px;
+}
+
+.rail-label.is-spoke {
+  font-weight: 550;
+  color: rgba(15, 23, 42, 0.55);
 }
 
 #labelLeaders {
@@ -602,12 +621,53 @@ li {
   background: linear-gradient(90deg, rgba(16, 185, 129, 0.0), rgba(16, 185, 129, 0.90));
 }
 
+.legend-gradient.views {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.0), rgba(59, 130, 246, 0.9));
+}
+
 .legend-scale {
   display: flex;
   justify-content: space-between;
   color: var(--muted);
   font-size: 12px;
   margin-bottom: 10px;
+}
+
+.cartogram-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cartogram-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cartogram-inline.is-disabled {
+  opacity: 0.6;
+}
+
+.control-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.control-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.bubble-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+  display: inline-block;
 }
 
 .swatch {

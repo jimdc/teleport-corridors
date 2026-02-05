@@ -327,6 +327,37 @@ def load_population_map(raw_geo: dict, csv_path: str) -> Dict[str, float]:
     return pop
 
 
+def load_scalar_csv(csv_path: str, value_keys: List[str]) -> Dict[str, float]:
+    if not os.path.exists(csv_path):
+        return {}
+    values: Dict[str, float] = {}
+    try:
+        import csv
+
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rid = row.get("atlas_id") or row.get("id") or row.get("nta") or row.get("NTACode") or row.get("nta2020")
+                if not rid:
+                    continue
+                val = None
+                for k in value_keys:
+                    if row.get(k) is not None:
+                        val = row.get(k)
+                        break
+                if val is None:
+                    continue
+                try:
+                    v = float(str(val).replace(",", ""))
+                    if math.isfinite(v):
+                        values[str(rid)] = v
+                except Exception:
+                    continue
+    except Exception:
+        return values
+    return values
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Build micro-units and derived neighborhoods.")
     ap.add_argument("--neighborhoods", required=True, help="Path to neighborhoods GeoJSON (tracts/NTAs)")
@@ -478,12 +509,19 @@ def main() -> int:
         print("No micro-units created", file=sys.stderr)
         return 2
 
-    # Load population map if present.
-    pop_map = load_population_map(raw_geo, os.path.join(os.path.dirname(args.neighborhoods), "scalars_population.csv"))
+    scalar_dir = os.path.dirname(args.neighborhoods)
+    pop_map = load_population_map(raw_geo, os.path.join(scalar_dir, "scalars_population.csv"))
+    scalar_maps: Dict[str, Dict[str, float]] = {"population": pop_map}
+    housing_map = load_scalar_csv(os.path.join(scalar_dir, "scalars_housing_units.csv"), ["housing_units", "value"])
+    if housing_map:
+        scalar_maps["housing_units"] = housing_map
+    jobs_map = load_scalar_csv(os.path.join(scalar_dir, "scalars_jobs.csv"), ["jobs", "value"])
+    if jobs_map:
+        scalar_maps["jobs"] = jobs_map
 
-    # Stamp population scalars into the base neighborhoods GeoJSON used by the site.
+    # Stamp scalars into the base neighborhoods GeoJSON used by the site.
     base_geo_out = os.path.join(out_dir, "neighborhoods.geojson")
-    if pop_map and os.path.exists(base_geo_out):
+    if scalar_maps and os.path.exists(base_geo_out):
         try:
             with open(base_geo_out, "r", encoding="utf-8") as f:
                 base_geo = json.load(f)
@@ -491,12 +529,14 @@ def main() -> int:
             for idx, feat in enumerate(base_geo.get("features") or []):
                 props = feat.get("properties") or {}
                 nid = str(props.get("atlas_id") or pick_neighborhood_id(props, idx))
-                if nid in pop_map:
-                    scalars = props.get("scalars") or {}
-                    scalars["population"] = pop_map[nid]
+                scalars = props.get("scalars") or {}
+                for key, smap in scalar_maps.items():
+                    if nid in smap:
+                        scalars[key] = smap[nid]
+                        updated = True
+                if scalars:
                     props["scalars"] = scalars
                     feat["properties"] = props
-                    updated = True
             if updated:
                 with open(base_geo_out, "w", encoding="utf-8") as f:
                     json.dump(base_geo, f)
@@ -541,11 +581,12 @@ def main() -> int:
         station_name = station["name"]
         region_id = f"station-{slugify(station_name)}-{station_id}"
 
-        # Scalar redistribution (population).
+        # Scalar redistribution (population, housing units, jobs).
         scalars = {}
-        pop = pop_map.get(tract_id)
-        if pop is not None and tract_area[tract_id] > 0:
-            scalars["population"] = pop * (area / tract_area[tract_id])
+        for key, smap in scalar_maps.items():
+            val = smap.get(tract_id)
+            if val is not None and tract_area[tract_id] > 0:
+                scalars[key] = val * (area / tract_area[tract_id])
 
         props = {
             "atlas_id": f"cell-{col}-{row}",

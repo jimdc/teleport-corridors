@@ -16,6 +16,7 @@
       <nav class="nav">
         <a class="nav-link" href="./centrality.html">Centrality</a>
         <a class="nav-link" href="./living.html">Teleportness</a>
+        <a class="nav-link" href="./views.html">Views</a>
         <a class="nav-link" href="./teleport-corridors.html">Corridors</a>
         <a class="nav-link" href="./glossary.html">Glossary</a>
         <a class="nav-link is-active" href="./methodology.html">Methodology</a>
@@ -83,8 +84,10 @@
       <section class="page-card">
         <h2 class="card-title">7) Cartogram</h2>
         <p class="page-text">
-          Cartogram mode resizes areas so their <b>area</b> encodes a selected metric (population first). It keeps the same
-          hover/label behavior but trades geographic fidelity for scale clarity.
+          Cartogram mode rescales neighborhood <b>area</b> to encode the selected “Resize by” metric. Geographic mode leaves
+          geometry untouched (Resize by is ignored unless Cartogram is active). Available metrics include <b>Population</b> and
+          <b>Housing units</b> from the NYC NTA Housing Tenure layer, plus <b>Jobs</b> from LODES WAC (aggregated to NTA2020).
+          Cartograms keep the same hover/label behavior but trade geographic fidelity for scale clarity.
         </p>
       </section>
 

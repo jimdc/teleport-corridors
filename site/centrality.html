@@ -17,6 +17,7 @@
       <nav class="nav">
         <a class="nav-link is-active" href="./centrality.html">Centrality</a>
         <a class="nav-link" href="./living.html">Teleportness</a>
+        <a class="nav-link" href="./views.html">Views</a>
         <a class="nav-link" href="./teleport-corridors.html">Corridors</a>
         <a class="nav-link" href="./glossary.html">Glossary</a>
         <a class="nav-link" href="./methodology.html">Methodology</a>
@@ -25,15 +26,7 @@
       <div class="goggles" aria-label="Map options">
         <label class="toggle">
           <input id="compactNames" type="checkbox" checked />
-          <span>Compact names</span>
-        </label>
-        <label class="toggle">
-          <input id="showHubHalos" type="checkbox" checked />
-          <span>Hub halos</span>
-        </label>
-        <label class="toggle">
-          <input id="showSpokeLabels" type="checkbox" checked />
-          <span>Spoke labels</span>
+          <span>Abbreviate</span>
         </label>
       </div>
 
@@ -42,17 +35,6 @@
           <option value="time">Travel time</option>
           <option value="centrality" selected>Centrality</option>
         </select>
-        <fieldset class="segmented" aria-label="Map mode">
-          <legend class="sr-only">Map mode</legend>
-          <label>
-            <input type="radio" name="mapMode" value="geographic" checked />
-            <span>Geographic</span>
-          </label>
-          <label>
-            <input type="radio" name="mapMode" value="cartogram" />
-            <span>Cartogram</span>
-          </label>
-        </fieldset>
         <fieldset class="segmented" aria-label="Base unit">
           <legend class="sr-only">Base unit</legend>
           <label>
@@ -64,10 +46,20 @@
             <span>Derived</span>
           </label>
         </fieldset>
-        <label id="cartogramScalarWrap" hidden>
-          Resize by
-          <select id="cartogramScalarSelect"></select>
-        </label>
+        <fieldset class="segmented" aria-label="Map mode">
+          <legend class="sr-only">Map mode</legend>
+          <label>
+            <input type="radio" name="mapMode" value="geographic" checked />
+            <span>Geographic</span>
+          </label>
+          <label class="cartogram-option">
+            <input type="radio" name="mapMode" value="cartogram" />
+            <span>Cartogram by</span>
+            <div id="cartogramScalarWrap" class="cartogram-inline">
+              <select id="cartogramScalarSelect"></select>
+            </div>
+          </label>
+        </fieldset>
         <label>
           Max minutes
           <input id="maxMinutes" type="range" min="15" max="180" step="5" value="90" />

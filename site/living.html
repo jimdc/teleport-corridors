@@ -17,6 +17,7 @@
       <nav class="nav">
         <a class="nav-link" href="./centrality.html">Centrality</a>
         <a class="nav-link is-active" href="./living.html">Teleportness</a>
+        <a class="nav-link" href="./views.html">Views</a>
         <a class="nav-link" href="./teleport-corridors.html">Corridors</a>
         <a class="nav-link" href="./glossary.html">Glossary</a>
         <a class="nav-link" href="./methodology.html">Methodology</a>
@@ -25,15 +26,7 @@
       <div class="goggles" aria-label="Map options">
         <label class="toggle">
           <input id="compactNames" type="checkbox" checked />
-          <span>Compact names</span>
-        </label>
-        <label class="toggle">
-          <input id="showHubHalos" type="checkbox" checked />
-          <span>Hub halos</span>
-        </label>
-        <label class="toggle">
-          <input id="showSpokeLabels" type="checkbox" checked />
-          <span>Spoke labels</span>
+          <span>Abbreviate</span>
         </label>
       </div>
 
@@ -41,17 +34,6 @@
         <select id="viewMode" hidden>
           <option value="living" selected>Living</option>
         </select>
-        <fieldset class="segmented" aria-label="Map mode">
-          <legend class="sr-only">Map mode</legend>
-          <label>
-            <input type="radio" name="mapMode" value="geographic" checked />
-            <span>Geographic</span>
-          </label>
-          <label>
-            <input type="radio" name="mapMode" value="cartogram" />
-            <span>Cartogram</span>
-          </label>
-        </fieldset>
         <fieldset class="segmented" aria-label="Base unit">
           <legend class="sr-only">Base unit</legend>
           <label>
@@ -63,10 +45,20 @@
             <span>Derived</span>
           </label>
         </fieldset>
-        <label id="cartogramScalarWrap" hidden>
-          Resize by
-          <select id="cartogramScalarSelect"></select>
-        </label>
+        <fieldset class="segmented" aria-label="Map mode">
+          <legend class="sr-only">Map mode</legend>
+          <label>
+            <input type="radio" name="mapMode" value="geographic" checked />
+            <span>Geographic</span>
+          </label>
+          <label class="cartogram-option">
+            <input type="radio" name="mapMode" value="cartogram" />
+            <span>Cartogram by</span>
+            <div id="cartogramScalarWrap" class="cartogram-inline">
+              <select id="cartogramScalarSelect"></select>
+            </div>
+          </label>
+        </fieldset>
         <label>
           Max minutes
           <input id="maxMinutes" type="range" min="15" max="180" step="5" value="90" />
@@ -184,6 +176,11 @@
 
           <div id="livingMetricHint" class="panel-hint" style="margin-top:8px;">
             “Minutes saved” vs a baseline travel speed to your chosen hub. Higher = more “teleport-y”.
+            Bubble size shows teleportness intensity.
+          </div>
+          <div class="legend-row" style="margin-top:6px;">
+            <span class="bubble-swatch" aria-hidden="true"></span>
+            <span>Bubble size = minutes saved</span>
           </div>
           <div class="panel-hint" style="margin-top:6px;">Tip: Click a neighborhood to pin hover details.</div>
         </div>

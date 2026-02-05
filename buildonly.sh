@@ -20,9 +20,28 @@ python3 tools/build_matrix.py \
   --neighborhoods "$NEIGHBORHOODS" \
   --out "$OUT"
 
-if [[ -f "data/raw/scalars_population.csv" ]]; then
-  cp "data/raw/scalars_population.csv" "$OUT/scalars_population.csv"
-fi
+for key in population housing_units jobs; do
+  if [[ -f "data/raw/scalars_${key}.csv" ]]; then
+    cp "data/raw/scalars_${key}.csv" "$OUT/scalars_${key}.csv"
+  fi
+done
+
+python3 - <<'PY'
+import glob
+import json
+import os
+
+out = os.environ.get("OUT", "site/data")
+keys = []
+for path in glob.glob(os.path.join(out, "scalars_*.csv")):
+    base = os.path.basename(path)
+    key = base.replace("scalars_", "").replace(".csv", "")
+    if key:
+        keys.append(key)
+manifest = {"keys": sorted(set(keys))}
+with open(os.path.join(out, "scalars_manifest.json"), "w", encoding="utf-8") as f:
+    json.dump(manifest, f)
+PY
 
 python3 tools/build_derived.py \
   --neighborhoods "$NEIGHBORHOODS" \

@@ -13,6 +13,7 @@ const HUB_HEX = {
 const LIVING_COLORS = {
   teleportness: { r: 16, g: 185, b: 129 }, // emerald
 };
+const VIEWS_COLOR = { r: 59, g: 130, b: 246 }; // blue
 
 const SCALAR_REGISTRY = {
   population: {
@@ -48,10 +49,124 @@ const SCALAR_REGISTRY = {
       return null;
     },
   },
+  housing_units: {
+    label: "Housing units",
+    valueKeys: ["housing_units", "housingunits", "HousingUnits", "HU", "H0010001", "H0010002"],
+    provider: (feature, ctx = {}) => {
+      const props = feature?.properties || {};
+      const keys = SCALAR_REGISTRY.housing_units.valueKeys || [];
+      for (const k of keys) {
+        const v = parseNumber(props[k]);
+        if (v != null) return v;
+      }
+      const id = String(props.atlas_id || "");
+      const csvMap = ctx.csv || null;
+      if (csvMap && id) {
+        const v = csvMap.get(id);
+        return v != null ? v : null;
+      }
+      return null;
+    },
+  },
+  jobs: {
+    label: "Jobs",
+    valueKeys: ["jobs", "employment", "emp", "jobs_total", "total_jobs"],
+    provider: (feature, ctx = {}) => {
+      const props = feature?.properties || {};
+      const keys = SCALAR_REGISTRY.jobs.valueKeys || [];
+      for (const k of keys) {
+        const v = parseNumber(props[k]);
+        if (v != null) return v;
+      }
+      const id = String(props.atlas_id || "");
+      const csvMap = ctx.csv || null;
+      if (csvMap && id) {
+        const v = csvMap.get(id);
+        return v != null ? v : null;
+      }
+      return null;
+    },
+  },
+};
+
+const VIEW_REGISTRY = {
+  population: {
+    label: "Population",
+    higherIsBetter: true,
+    unit: "people",
+    type: "scalar",
+    scalarKey: "population",
+    description: "Total population in each region.",
+  },
+  population_density: {
+    label: "Population density",
+    higherIsBetter: true,
+    unit: "people/km²",
+    type: "density",
+    scalarKey: "population",
+    description: "Population divided by area.",
+  },
+  reachable_pop_30: {
+    label: "Population within 30 min",
+    higherIsBetter: true,
+    unit: "people",
+    type: "reachable",
+    scalarKey: "population",
+    threshold: 30,
+    description: "Population reachable by subway within 30 minutes.",
+  },
+  reachable_pop_40: {
+    label: "Population within 40 min",
+    higherIsBetter: true,
+    unit: "people",
+    type: "reachable",
+    scalarKey: "population",
+    threshold: 40,
+    description: "Population reachable by subway within 40 minutes.",
+  },
+  housing_units: {
+    label: "Housing units",
+    higherIsBetter: true,
+    unit: "units",
+    type: "scalar",
+    scalarKey: "housing_units",
+    description: "Housing units (requires a local CSV).",
+    requiresScalar: "housing_units",
+  },
+  jobs: {
+    label: "Jobs",
+    higherIsBetter: true,
+    unit: "jobs",
+    type: "scalar",
+    scalarKey: "jobs",
+    description: "Jobs per neighborhood (requires a local CSV).",
+    requiresScalar: "jobs",
+  },
+  reachable_jobs_30: {
+    label: "Jobs within 30 min",
+    higherIsBetter: true,
+    unit: "jobs",
+    type: "reachable",
+    scalarKey: "jobs",
+    threshold: 30,
+    description: "Jobs reachable within 30 minutes (requires a jobs CSV).",
+    requiresScalar: "jobs",
+  },
+  reachable_jobs_40: {
+    label: "Jobs within 40 min",
+    higherIsBetter: true,
+    unit: "jobs",
+    type: "reachable",
+    scalarKey: "jobs",
+    threshold: 40,
+    description: "Jobs reachable within 40 minutes (requires a jobs CSV).",
+    requiresScalar: "jobs",
+  },
 };
 
 const SCALAR_KEYS = Object.keys(SCALAR_REGISTRY);
 const DEFAULT_SCALAR_KEY = "population";
+let availableScalarKeys = null;
 
 function clamp01(v) {
   return Math.max(0, Math.min(1, v));
@@ -139,6 +254,25 @@ function livingToFill(score, min, max, rgb) {
   return { fill: `rgba(${c.r},${c.g},${c.b},${alpha.toFixed(4)})`, fillOpacity: 1 };
 }
 
+function viewsToFill(score, min, max) {
+  if (score == null || !Number.isFinite(score)) return { fill: "rgba(2,6,23,0.02)", fillOpacity: 1 };
+  const denom = max - min;
+  const t = denom > 0 ? clamp01((score - min) / denom) : 0.5;
+  const alpha = 0.06 + 0.86 * Math.pow(t, 1.22);
+  const c = VIEWS_COLOR;
+  return { fill: `rgba(${c.r},${c.g},${c.b},${alpha.toFixed(4)})`, fillOpacity: 1 };
+}
+
+function formatViewValue(value, unit) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const u = String(unit || "").toLowerCase();
+  if (u.includes("people")) return `${formatNumber(value)} people`;
+  if (u.includes("jobs")) return `${formatNumber(value)} jobs`;
+  if (u.includes("units")) return `${formatNumber(value)} units`;
+  if (u.includes("km²") || u.includes("km2")) return `${formatNumber(Math.round(value))} ${unit}`;
+  return formatNumber(value);
+}
+
 function formatRow(name, mins) {
   if (mins == null) return `${name} — unreachable`;
   return `${name} — ${mins} min`;
@@ -164,6 +298,19 @@ async function fetchText(path) {
   const res = await fetch(path);
   if (!res.ok) return null;
   return await res.text();
+}
+
+async function loadScalarManifest() {
+  const text = await fetchText(`${DATA_DIR}/scalars_manifest.json`);
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    const keys = Array.isArray(parsed) ? parsed : parsed?.keys;
+    if (!Array.isArray(keys)) return null;
+    return keys.map((k) => String(k));
+  } catch (err) {
+    return null;
+  }
 }
 
 function parseCsvToMap(text, { idKeys = [], valueKeys = [] } = {}) {
@@ -206,9 +353,16 @@ async function attachScalars(features) {
   if (!features || !features.length) return new Map();
   const scalarValuesByKey = new Map();
   const csvByKey = new Map();
+  const allowedKeys = new Set(
+    Array.isArray(availableScalarKeys) && availableScalarKeys.length ? availableScalarKeys : ["population"],
+  );
   for (const key of SCALAR_KEYS) {
     scalarValuesByKey.set(key, new Map());
-    csvByKey.set(key, await loadScalarCsv(key));
+    if (allowedKeys.has(key)) {
+      csvByKey.set(key, await loadScalarCsv(key));
+    } else {
+      csvByKey.set(key, null);
+    }
   }
 
   for (const feat of features) {
@@ -348,11 +502,16 @@ function updatePanel({ originIndex, neighborhoods, minutesRow, routeRow, routes,
   }
 
   const origin = neighborhoods[originIndex];
-  renderNameWithBorough(originNameEl, fmt(origin.name || origin.id), origin.borough, origin.name_confidence);
+  renderNameWithBorough(
+    originNameEl,
+    fmt(nameForId(origin.id)),
+    boroughForId(origin.id),
+    confidenceForId(origin.id),
+  );
 
   const rows = neighborhoods.map((n, idx) => ({
     idx,
-    name: fmt(n.name || n.id),
+    name: fmt(nameForId(n.id)),
     mins: minutesRow[idx],
     routeIdx: routeRow?.[idx] ?? null,
   }));
@@ -434,6 +593,48 @@ function* iterLonLatCoords(geometry) {
   }
 }
 
+function ringAreaKm2(ring) {
+  if (!Array.isArray(ring) || ring.length < 3) return 0;
+  const toRad = (d) => (d * Math.PI) / 180;
+  let area = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [lon1, lat1] = ring[i];
+    const [lon2, lat2] = ring[i + 1];
+    const kmPerDegLon1 = 111.32 * Math.cos(toRad(lat1));
+    const kmPerDegLon2 = 111.32 * Math.cos(toRad(lat2));
+    const x1 = lon1 * kmPerDegLon1;
+    const y1 = lat1 * 111.32;
+    const x2 = lon2 * kmPerDegLon2;
+    const y2 = lat2 * 111.32;
+    area += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(area) / 2;
+}
+
+function geometryAreaKm2(geometry) {
+  if (!geometry) return 0;
+  const t = geometry.type;
+  const c = geometry.coordinates;
+  if (!c) return 0;
+  let total = 0;
+  if (t === "Polygon") {
+    for (let i = 0; i < c.length; i++) {
+      const ring = c[i];
+      const a = ringAreaKm2(ring);
+      total += i === 0 ? a : -a;
+    }
+  } else if (t === "MultiPolygon") {
+    for (const poly of c) {
+      for (let i = 0; i < poly.length; i++) {
+        const ring = poly[i];
+        const a = ringAreaKm2(ring);
+        total += i === 0 ? a : -a;
+      }
+    }
+  }
+  return Math.abs(total);
+}
+
 function computeViewBox(geojson) {
   const bounds = computeProjectedBounds(geojson);
   const padX = (bounds.maxX - bounds.minX) * 0.03;
@@ -449,6 +650,8 @@ function computeViewBox(geojson) {
 function formatScalarValue(key, value) {
   if (value == null || !Number.isFinite(value)) return "—";
   if (key === "population") return `${formatNumber(value)} people`;
+  if (key === "housing_units") return `${formatNumber(value)} units`;
+  if (key === "jobs") return `${formatNumber(value)} jobs`;
   return formatNumber(value);
 }
 
@@ -1003,14 +1206,15 @@ async function main() {
   const maxMinutesLabelEl = document.getElementById("maxMinutesLabel");
   const legendMaxEl = document.getElementById("legendMax");
   const compactNamesEl = document.getElementById("compactNames");
-  const showHubHalosEl = document.getElementById("showHubHalos");
-  const showSpokeLabelsEl = document.getElementById("showSpokeLabels");
   const mapModeRadios = Array.from(document.querySelectorAll('input[name="mapMode"]'));
   const baseUnitRadios = Array.from(document.querySelectorAll('input[name="baseUnit"]'));
   const cartogramScalarSelectEl = document.getElementById("cartogramScalarSelect");
   const cartogramScalarValueEl = document.getElementById("cartogramScalarValue");
   const cartogramScalarWrapEl = document.getElementById("cartogramScalarWrap");
+  const cartogramScalarHintEl = document.getElementById("cartogramScalarHint");
   const cartogramLegendNoteEl = document.getElementById("cartogramLegendNote");
+  const viewsMetricSelectEl = document.getElementById("viewsMetricSelect");
+  const viewsMetricNoteEl = document.getElementById("viewsMetricNote");
   const svg = document.getElementById("mapSvg");
   const leadersSvg = document.getElementById("labelLeaders");
   const labelRailLeftEl = document.getElementById("labelRailLeft");
@@ -1031,21 +1235,11 @@ async function main() {
     return checked?.value || "tract";
   };
 
-  const showHubHalos = () => (showHubHalosEl ? showHubHalosEl.checked : true);
-  const showSpokeLabels = () => (showSpokeLabelsEl ? showSpokeLabelsEl.checked : true);
 
   const loadPrefs = () => {
     if (compactNamesEl) {
       const c = localStorage.getItem("atlas.compactNames");
       compactNamesEl.checked = c == null ? true : c === "1";
-    }
-    if (showHubHalosEl) {
-      const v = localStorage.getItem("atlas.showHubHalos");
-      showHubHalosEl.checked = v == null ? true : v === "1";
-    }
-    if (showSpokeLabelsEl) {
-      const v = localStorage.getItem("atlas.showSpokeLabels");
-      showSpokeLabelsEl.checked = v == null ? true : v === "1";
     }
     const p = localStorage.getItem("atlas.profile");
     if (p && profileRadios.length) {
@@ -1066,8 +1260,6 @@ async function main() {
 
   const savePrefs = () => {
     if (compactNamesEl) localStorage.setItem("atlas.compactNames", compactNamesEl.checked ? "1" : "0");
-    if (showHubHalosEl) localStorage.setItem("atlas.showHubHalos", showHubHalosEl.checked ? "1" : "0");
-    if (showSpokeLabelsEl) localStorage.setItem("atlas.showSpokeLabels", showSpokeLabelsEl.checked ? "1" : "0");
     if (profileRadios.length) localStorage.setItem("atlas.profile", getProfile());
     if (mapModeRadios.length) localStorage.setItem("atlas.mapMode", getMapMode());
     if (baseUnitRadios.length) localStorage.setItem("atlas.baseUnit", getBaseUnit());
@@ -1164,11 +1356,24 @@ async function main() {
   let livingColorKey = "teleportness";
   let livingRawHigherIsBetter = true;
 
+  // Views mode: scalar surfaces (population, density, reachable population/jobs).
+  let viewsMetricKey = "population";
+  let viewsById = new Map();
+  let viewsRawById = new Map();
+  let viewsStats = { min: 0, max: 1 };
+  let viewsLabel = "";
+  let viewsHigherIsBetter = true;
+  let viewsNote = "";
+  let viewsAreaById = new Map();
+  let viewsAreaCacheKey = "";
+  let viewsReachableCache = new Map();
+
   let tractsGeo = null;
   let tractsScalars = new Map();
   let derivedGeo = null;
   let derivedScalars = null;
   let derivedLoaded = false;
+  let geoMetaById = new Map();
 
   const ensureDerivedGeo = async () => {
     if (derivedLoaded) return derivedGeo;
@@ -1214,6 +1419,17 @@ async function main() {
     scalarValuesByKey = scalars;
     const triFeatures = (geo?.features || []).filter((f) => isTriBorough(getBorough(f?.properties || {})));
     visibleGeo = triFeatures.length > 0 ? { type: "FeatureCollection", features: triFeatures } : geo;
+    geoMetaById = new Map();
+    for (const feat of visibleGeo?.features || []) {
+      const props = feat?.properties || {};
+      const id = String(props.atlas_id || "");
+      if (!id) continue;
+      geoMetaById.set(id, {
+        name: featureName(props),
+        borough: getBorough(props) || props.borough || "",
+        name_confidence: props.name_confidence,
+      });
+    }
     visibleIds = new Set(
       (visibleGeo?.features || [])
         .map((f) => String((f?.properties || {}).atlas_id || ""))
@@ -1221,6 +1437,9 @@ async function main() {
     );
     baseViewBox = computeViewBox(visibleGeo);
     cartogramCacheKey = null;
+    viewsAreaCacheKey = "";
+    viewsAreaById = new Map();
+    viewsReachableCache = new Map();
   };
   let livingLabel = "Teleportness";
   let livingById = new Map(); // oriented so "higher is better"
@@ -1245,7 +1464,7 @@ async function main() {
     name = name.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
 
     const parts = name.split(/\s*-\s*/g).filter(Boolean);
-    const base = parts.slice(0, 2).join(" / ");
+    const base = parts.length > 2 ? parts[0] : parts.slice(0, 2).join(" / ");
 
     const replacements = [
       [/\bUpper West Side\b/gi, "UWS"],
@@ -1254,9 +1473,10 @@ async function main() {
       [/\bEast Village\b/gi, "EV"],
       [/\bWest Village\b/gi, "WV"],
       [/\bGreenwich Village\b/gi, "GV"],
+      [/\bLong Island City\b/gi, "LIC"],
       [/\bHell's Kitchen\b/gi, "HK"],
       [/\bFinancial District\b/gi, "FiDi"],
-      [/\bLong Island City\b/gi, "LIC"],
+      [/\bTimes Square\b/gi, "TSQ"],
       [/\bBedford[- ]Stuyvesant\b/gi, "Bed-Stuy"],
       [/\bWilliamsburg\b/gi, "W'burg"],
       [/\bCrown Heights\b/gi, "Crown Hts"],
@@ -1264,8 +1484,17 @@ async function main() {
       [/\bMorningside Heights\b/gi, "Morningside"],
       [/\bProspect Lefferts Gardens\b/gi, "PLG"],
       [/\bJohn F\\. Kennedy International Airport\b/gi, "JFK"],
+      [/\bLaGuardia Airport\b/gi, "LGA"],
       [/\bInternational Airport\b/gi, "Intl"],
-      [/\bTimes Square\b/gi, "TSQ"],
+      [/\bStaten Island\b/gi, "StI"],
+      [/\bCentral Park\b/gi, "Central Pk"],
+      [/\bForest Hills\b/gi, "Forest Hls"],
+      [/\bKew Gardens\b/gi, "Kew Gdns"],
+      [/\bBorough Park\b/gi, "Boro Pk"],
+      [/\bKings Highway\b/gi, "Kings Hwy"],
+      [/\bManhattan Beach\b/gi, "Mhtn Bch"],
+      [/\bSheepshead Bay\b/gi, "Sheepshead"],
+      [/\bGerritsen Beach\b/gi, "Gerritsen"],
     ];
     let out = base;
     for (const [re, sub] of replacements) out = out.replace(re, sub);
@@ -1273,9 +1502,23 @@ async function main() {
     out = out
       .replace(/\bHeights\b/gi, "Hts")
       .replace(/\bPark\b/gi, "Pk")
+      .replace(/\bParkway\b/gi, "Pkwy")
+      .replace(/\bBoulevard\b/gi, "Blvd")
+      .replace(/\bAvenue\b/gi, "Ave")
+      .replace(/\bStreet\b/gi, "St")
+      .replace(/\bRoad\b/gi, "Rd")
+      .replace(/\bDrive\b/gi, "Dr")
+      .replace(/\bCourt\b/gi, "Ct")
+      .replace(/\bTerrace\b/gi, "Ter")
+      .replace(/\bCenter\b/gi, "Ctr")
       .replace(/\bGardens\b/gi, "Gdns")
       .replace(/\bVillage\b/gi, "Vlg")
-      .replace(/\bJunction\b/gi, "Jct");
+      .replace(/\bJunction\b/gi, "Jct")
+      .replace(/\bBroadway\b/gi, "Bdwy")
+      .replace(/\bBeach\b/gi, "Bch")
+      .replace(/\bHarbor\b/gi, "Hbr")
+      .replace(/\bPoint\b/gi, "Pt")
+      .replace(/\bIsland\b/gi, "Is");
 
     out = out
       .replace(/\bNorth\b/gi, "N")
@@ -1283,7 +1526,7 @@ async function main() {
       .replace(/\bEast\b/gi, "E")
       .replace(/\bWest\b/gi, "W");
 
-    const maxLen = 20;
+    const maxLen = 16;
     if (out.length > maxLen) out = `${out.slice(0, maxLen - 1)}…`;
     return out;
   };
@@ -1418,10 +1661,34 @@ async function main() {
 
     buildHubIndex();
     hubSpokeCache.clear();
+    viewsReachableCache = new Map();
 
   };
 
   const nbById = () => new Map(neighborhoods.map((n) => [String(n.id), n]));
+
+  const geoMetaForId = (id) => geoMetaById.get(String(id)) || null;
+
+  const nameForId = (id) => {
+    const meta = geoMetaForId(id);
+    if (meta?.name) return meta.name;
+    const nb = nbById().get(String(id));
+    return nb?.name || String(id);
+  };
+
+  const boroughForId = (id) => {
+    const meta = geoMetaForId(id);
+    if (meta?.borough) return meta.borough;
+    const nb = nbById().get(String(id));
+    return nb?.borough || "";
+  };
+
+  const confidenceForId = (id) => {
+    const meta = geoMetaForId(id);
+    if (meta?.name_confidence != null) return meta.name_confidence;
+    const nb = nbById().get(String(id));
+    return nb?.name_confidence;
+  };
 
   const indexById = () => new Map(neighborhoods.map((n, i) => [String(n.id), i]));
 
@@ -1575,9 +1842,11 @@ async function main() {
 
   const isCentralityPage = document.body.classList.contains("centrality-page");
   const isLivingPage = document.body.classList.contains("living-page");
+  const isViewsPage = document.body.classList.contains("views-page");
   const getViewMode = () => {
     if (isCentralityPage) return "centrality";
     if (isLivingPage) return "living";
+    if (isViewsPage) return "views";
     return viewModeEl?.value || "time";
   };
   let hubCentralityHubId = null;
@@ -1725,9 +1994,8 @@ async function main() {
         userHubGroupEl.hidden = true;
         return;
       }
-      const nb = nbById().get(String(customId));
-      const name = displayName(nb?.name || customId);
-      const boro = nb?.borough || "";
+      const name = displayName(nameForId(customId));
+      const boro = boroughForId(customId);
       userHubGroupEl.hidden = false;
       if (userHubNameEl) userHubNameEl.textContent = name;
       if (userHubPillEl) {
@@ -1754,7 +2022,10 @@ async function main() {
     centralityApplyUi = () => {
       const metric = metricRadios.find((r) => r.checked)?.value || "hub";
       centralityMetricKey = metric;
-      if (hubControlsEl) hubControlsEl.hidden = metric !== "hub";
+      if (hubControlsEl) {
+        hubControlsEl.hidden = metric !== "hub";
+        hubControlsEl.style.display = metric === "hub" ? "" : "none";
+      }
 
       if (metric === "hub") {
         let presetKey = hubPresetRadios.find((r) => r.checked)?.value || "midtown";
@@ -1912,6 +2183,196 @@ async function main() {
     });
   };
 
+  const viewMetricAvailable = (metric) => {
+    if (!metric) return false;
+    const scalarKey = metric.requiresScalar || metric.scalarKey;
+    if (scalarKey) {
+      const map = scalarValuesByKey.get(scalarKey);
+      if (!map || map.size === 0) return false;
+    }
+    if (metric.type === "reachable" && !minutesMatrix) return false;
+    return true;
+  };
+
+  const rebuildViewsAreaCache = () => {
+    const key = `${getBaseUnit()}|${visibleGeo?.features?.length || 0}`;
+    if (key === viewsAreaCacheKey) return;
+    viewsAreaById = new Map();
+    for (const feat of visibleGeo?.features || []) {
+      const props = feat?.properties || {};
+      const id = String(props.atlas_id || "");
+      if (!id) continue;
+      const area = geometryAreaKm2(feat.geometry);
+      if (area > 0) viewsAreaById.set(id, area);
+    }
+    viewsAreaCacheKey = key;
+  };
+
+  const computeReachableScalar = (threshold, scalarKey) => {
+    const cacheKey = `${scalarKey}|${threshold}|${getProfile()}|${getBaseUnit()}`;
+    if (viewsReachableCache.has(cacheKey)) return viewsReachableCache.get(cacheKey);
+    const result = new Map();
+    const scalarMap = scalarValuesByKey.get(scalarKey) || new Map();
+    if (!minutesMatrix || !neighborhoods.length) {
+      viewsReachableCache.set(cacheKey, result);
+      return result;
+    }
+    const ids = neighborhoods.map((n) => String(n.id));
+    for (let i = 0; i < ids.length; i++) {
+      const row = minutesMatrix[i];
+      if (!Array.isArray(row)) continue;
+      let sum = 0;
+      for (let j = 0; j < ids.length; j++) {
+        const mins = row[j];
+        if (mins == null || !Number.isFinite(mins) || mins > threshold) continue;
+        const v = scalarMap.get(ids[j]);
+        if (v != null && Number.isFinite(v)) sum += v;
+      }
+      result.set(ids[i], sum);
+    }
+    viewsReachableCache.set(cacheKey, result);
+    return result;
+  };
+
+  const applyViewsMetric = () => {
+    const metric = VIEW_REGISTRY[viewsMetricKey] || VIEW_REGISTRY.population;
+    viewsLabel = metric?.label || viewsMetricKey;
+    viewsHigherIsBetter = metric?.higherIsBetter !== false;
+    viewsNote = metric?.description || "";
+
+    if (!viewMetricAvailable(metric)) {
+      const key = metric?.requiresScalar || metric?.scalarKey;
+      if (key) {
+        const hint = `Add data/raw/scalars_${key}.csv and run ./buildonly.sh to enable this view.`;
+        viewsNote = viewsNote ? `${viewsNote} ${hint}` : hint;
+      }
+      viewsById = new Map();
+      viewsRawById = new Map();
+      viewsStats = { min: 0, max: 1 };
+      if (viewsMetricNoteEl) viewsMetricNoteEl.textContent = viewsNote;
+      return;
+    }
+
+    viewsRawById = new Map();
+    if (metric.type === "scalar") {
+      for (const n of neighborhoods) {
+        const id = String(n.id);
+        const v = getScalarValueById(id, metric.scalarKey);
+        if (v != null) viewsRawById.set(id, v);
+      }
+    } else if (metric.type === "density") {
+      rebuildViewsAreaCache();
+      for (const n of neighborhoods) {
+        const id = String(n.id);
+        const v = getScalarValueById(id, metric.scalarKey);
+        const area = viewsAreaById.get(id);
+        if (v != null && area != null && area > 0) {
+          viewsRawById.set(id, v / area);
+        }
+      }
+    } else if (metric.type === "reachable") {
+      viewsRawById = computeReachableScalar(metric.threshold, metric.scalarKey);
+    }
+
+    viewsById = new Map();
+    for (const [id, v] of viewsRawById.entries()) {
+      if (!Number.isFinite(v)) continue;
+      viewsById.set(id, viewsHigherIsBetter ? v : -v);
+    }
+
+    const oriented = Array.from(viewsById.values()).filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+    const lo = quantile(oriented, 0.05) ?? (oriented[0] ?? 0);
+    const hi = quantile(oriented, 0.95) ?? (oriented[oriented.length - 1] ?? 1);
+    viewsStats = { min: lo, max: hi };
+    if (viewsMetricNoteEl) viewsMetricNoteEl.textContent = viewsNote;
+  };
+
+  const renderViewsPanel = () => {
+    if (!isViewsPage) return;
+    const panel = document.getElementById("viewsPanel");
+    const topEl = document.getElementById("viewsTop");
+    const botEl = document.getElementById("viewsBottom");
+    const hoverNameEl = document.getElementById("viewsHoverName");
+    const hoverMetaEl = document.getElementById("viewsHoverMeta");
+    if (!panel || !topEl || !botEl || !hoverNameEl || !hoverMetaEl) return;
+
+    const mode = getViewMode();
+    panel.hidden = mode !== "views";
+    if (mode !== "views") return;
+
+    const metric = VIEW_REGISTRY[viewsMetricKey] || VIEW_REGISTRY.population;
+    const rows = neighborhoods
+      .map((n) => ({
+        id: String(n.id),
+        name: displayName(nameForId(n.id)),
+        sort: viewsById.get(String(n.id)),
+        raw: viewsRawById.get(String(n.id)),
+      }))
+      .filter((r) => Number.isFinite(r.sort) && Number.isFinite(r.raw));
+
+    rows.sort((a, b) => b.sort - a.sort);
+    const fmt = (r) => `${r.name} — ${formatViewValue(r.raw, metric?.unit)}`;
+    setList(topEl, rows.slice(0, 10).map(fmt));
+    setList(botEl, rows.slice(-10).reverse().map(fmt));
+
+    const activeId = pinnedDestId != null ? pinnedDestId : hoveredDestId;
+    if (!activeId) {
+      hoverNameEl.textContent = "Hover a neighborhood";
+      hoverMetaEl.textContent = "";
+      return;
+    }
+
+    const name = displayName(nameForId(activeId));
+    const raw = viewsRawById.get(String(activeId));
+    hoverNameEl.textContent = name;
+    hoverMetaEl.textContent = `${viewsLabel}: ${formatViewValue(raw, metric?.unit)}`;
+  };
+
+  let viewsUiBound = false;
+  const setupViewsUi = () => {
+    if (!isViewsPage) return;
+    if (!viewsMetricSelectEl) return;
+
+    const applyMetricFromUi = () => {
+      const val = viewsMetricSelectEl.value;
+      viewsMetricKey = VIEW_REGISTRY[val] ? val : "population";
+      localStorage.setItem("atlas.viewsMetric", viewsMetricKey);
+      applyViewsMetric();
+      restyle();
+      renderLabels();
+      renderViewsPanel();
+    };
+
+    const stored = localStorage.getItem("atlas.viewsMetric") || "population";
+    const metrics = Object.entries(VIEW_REGISTRY);
+
+    if (!viewsUiBound) {
+      viewsMetricSelectEl.addEventListener("change", () => applyMetricFromUi());
+      viewsUiBound = true;
+    }
+
+    viewsMetricSelectEl.replaceChildren();
+    let fallbackKey = null;
+    for (const [key, metric] of metrics) {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = metric.label || key;
+      const available = viewMetricAvailable(metric);
+      if (!available) {
+        opt.disabled = true;
+        opt.textContent = `${metric.label || key} (add data)`;
+      }
+      if (fallbackKey == null && available) fallbackKey = key;
+      viewsMetricSelectEl.appendChild(opt);
+    }
+
+    const initialKey = viewMetricAvailable(VIEW_REGISTRY[stored]) ? stored : fallbackKey || "population";
+    viewsMetricKey = initialKey;
+    viewsMetricSelectEl.value = initialKey;
+    applyViewsMetric();
+    renderViewsPanel();
+  };
+
   let livingUiBound = false;
   let livingApplyUi = () => {};
   let livingPresetIdByKey = new Map();
@@ -1970,9 +2431,8 @@ async function main() {
         userHubGroupEl.hidden = true;
         return;
       }
-      const nb = nbById().get(String(customId));
-      const name = displayName(nb?.name || customId);
-      const boro = nb?.borough || "";
+      const name = displayName(nameForId(customId));
+      const boro = boroughForId(customId);
       userHubGroupEl.hidden = false;
       if (userHubNameEl) userHubNameEl.textContent = name;
       if (userHubPillEl) {
@@ -2087,20 +2547,28 @@ async function main() {
     // Populate scalar dropdown.
     if (cartogramScalarSelectEl) {
       cartogramScalarSelectEl.replaceChildren();
-      for (const key of SCALAR_KEYS) {
+      const cartogramKeys = SCALAR_KEYS.filter((k) => (SCALAR_REGISTRY[k]?.type || "scalar") === "scalar");
+      const availableKeys = cartogramKeys.filter((k) => (scalarValuesByKey.get(k)?.size || 0) > 0);
+      const keysToShow = availableKeys.length ? availableKeys : cartogramKeys;
+      for (const key of keysToShow) {
         const opt = document.createElement("option");
         opt.value = key;
         opt.textContent = SCALAR_REGISTRY[key]?.label || key;
         cartogramScalarSelectEl.appendChild(opt);
       }
       const storedKey = localStorage.getItem("atlas.cartogramScalar") || DEFAULT_SCALAR_KEY;
-      cartogramScalarKey = SCALAR_KEYS.includes(storedKey) ? storedKey : DEFAULT_SCALAR_KEY;
+      cartogramScalarKey = keysToShow.includes(storedKey) ? storedKey : keysToShow[0] || DEFAULT_SCALAR_KEY;
       cartogramScalarSelectEl.value = cartogramScalarKey;
     }
 
     const applyMapModeUi = (preserveState = true) => {
       const mode = getMapMode();
-      if (cartogramScalarWrapEl) cartogramScalarWrapEl.hidden = mode !== "cartogram";
+      if (cartogramScalarWrapEl) {
+        cartogramScalarWrapEl.hidden = false;
+        cartogramScalarWrapEl.classList.toggle("is-disabled", mode !== "cartogram");
+      }
+      if (cartogramScalarSelectEl) cartogramScalarSelectEl.disabled = mode !== "cartogram";
+      if (cartogramScalarHintEl) cartogramScalarHintEl.hidden = mode === "cartogram";
       if (cartogramLegendNoteEl) cartogramLegendNoteEl.hidden = mode !== "cartogram";
       if (mode === "cartogram") {
         ensureCartogram();
@@ -2122,7 +2590,8 @@ async function main() {
 
     cartogramScalarSelectEl?.addEventListener("change", () => {
       const val = cartogramScalarSelectEl.value;
-      cartogramScalarKey = SCALAR_KEYS.includes(val) ? val : DEFAULT_SCALAR_KEY;
+      const cartogramKeys = SCALAR_KEYS.filter((k) => (SCALAR_REGISTRY[k]?.type || "scalar") === "scalar");
+      cartogramScalarKey = cartogramKeys.includes(val) ? val : DEFAULT_SCALAR_KEY;
       localStorage.setItem("atlas.cartogramScalar", cartogramScalarKey);
       cartogramCacheKey = null;
       ensureCartogram();
@@ -2321,9 +2790,9 @@ async function main() {
       dot.setAttribute("cx", String(x));
       dot.setAttribute("cy", String(y));
       dot.setAttribute("r", String(r));
-      dot.setAttribute("fill", `rgba(${rgb.r},${rgb.g},${rgb.b},0.86)`);
-      dot.setAttribute("stroke", "rgba(255,255,255,0.92)");
-      dot.setAttribute("stroke-width", "1.1");
+      dot.setAttribute("fill", `rgba(${rgb.r},${rgb.g},${rgb.b},0.55)`);
+      dot.setAttribute("stroke", "rgba(255,255,255,0.85)");
+      dot.setAttribute("stroke-width", "0.9");
       dot.setAttribute("vector-effect", "non-scaling-stroke");
       frag.appendChild(dot);
     }
@@ -2361,12 +2830,12 @@ async function main() {
     const activeHub = hubAllowed ? getActiveHubInfo() : null;
     const activeHubId = activeHub?.id ? String(activeHub.id) : null;
     const hasActiveHub = !!activeHubId;
-    const showHalos = showHubHalos();
+    const showHalos = true;
     const minDim = baseViewBox ? Math.min(baseViewBox.w, baseViewBox.h) : 0.01;
     const ringR = minDim * 0.018;
     const coreR = ringR * 0.45;
-    const haloRActive = minDim * 0.18;
-    const haloRIdle = minDim * 0.12;
+    const haloRActive = minDim * 0.24;
+    const haloRIdle = minDim * 0.14;
 
     const hubs = [];
     for (const [id, hub] of hubPresetById.entries()) {
@@ -2405,7 +2874,7 @@ async function main() {
           halo.setAttribute("cx", String(pos.x));
           halo.setAttribute("cy", String(pos.y));
           halo.setAttribute("r", String(hub.isActive ? haloRActive : haloRIdle));
-          halo.setAttribute("fill", hubColor(boroKeyValue, hub.isActive ? 0.12 : 0.05));
+          halo.setAttribute("fill", hubColor(boroKeyValue, hub.isActive ? 0.18 : 0.1));
           halo.setAttribute("class", "hub-halo");
           haloFrag.appendChild(halo);
         }
@@ -2628,11 +3097,14 @@ async function main() {
       const mins = minsFromOriginToId(id);
       const score = centralityById.get(String(id));
       const livingScore = livingById.get(String(id));
+      const viewsScore = viewsById.get(String(id));
       const { fill, fillOpacity } =
         mode === "centrality"
           ? centralityToFill(score, centralityStats.min, centralityStats.max)
           : mode === "living"
             ? livingToFill(livingScore, livingStats.min, livingStats.max, livingRgb)
+            : mode === "views"
+              ? viewsToFill(viewsScore, viewsStats.min, viewsStats.max)
             : !hasOrigin
               ? showBase
                 ? { fill: baseFill, fillOpacity: 1 }
@@ -2696,6 +3168,12 @@ async function main() {
       renderLivingNodes();
       return;
     }
+    if (mode === "views") {
+      clearOverlay();
+      clearIsochrones();
+      clearLivingNodes();
+      return;
+    }
     if (mapMode === "cartogram") {
       clearOverlay();
       clearIsochrones();
@@ -2714,6 +3192,16 @@ async function main() {
     if (!nb) return;
     const mode = getViewMode();
     if (mode === "centrality") return;
+
+    if (mode === "views") {
+      const clickedId = String(id);
+      pinnedDestId = pinnedDestId === clickedId ? null : clickedId;
+      hoveredDestId = pinnedDestId ? clickedId : null;
+      restyle();
+      renderLabels();
+      renderViewsPanel();
+      return;
+    }
 
     if (mode === "living") {
       const clickedId = String(id);
@@ -2762,11 +3250,15 @@ async function main() {
   };
 
   const showCentralityHover = (id) => {
-    const nb = nbById().get(String(id));
     const destNameEl = document.getElementById("destName");
     const routeSummaryEl = document.getElementById("routeSummary");
     const routeStepsEl = document.getElementById("routeSteps");
-    renderNameWithBorough(destNameEl, displayName(nb?.name || String(id)), nb?.borough, nb?.name_confidence);
+    renderNameWithBorough(
+      destNameEl,
+      displayName(nameForId(id)),
+      boroughForId(id),
+      confidenceForId(id),
+    );
     routeSummaryEl.textContent = `${centralityLabel}: ${formatCentralityValue(id)}`;
     setList(routeStepsEl, []);
     updateCartogramScalar(id);
@@ -2789,6 +3281,13 @@ async function main() {
       showCentralityHover(id);
       restyle();
       renderLabels();
+      return;
+    }
+    if (mode === "views") {
+      if (pinnedDestId != null) return;
+      hoveredDestId = String(id);
+      restyle();
+      renderViewsPanel();
       return;
     }
     if (mode === "living") {
@@ -2823,6 +3322,15 @@ async function main() {
       resetCentralityHover();
       restyle();
       renderLabels();
+      return;
+    }
+    if (mode === "views") {
+      if (pinnedDestId != null) return;
+      if (hoveredDestId == null) return;
+      if (String(id) !== String(hoveredDestId)) return;
+      hoveredDestId = null;
+      restyle();
+      renderViewsPanel();
       return;
     }
     if (mode === "living") {
@@ -2967,7 +3475,7 @@ async function main() {
     const hubAllowed = !(mode === "centrality" && centralityMetricKey !== "hub");
     const activeHub = hubAllowed ? getActiveHubInfo() : null;
     const activeHubId = activeHub?.id ? String(activeHub.id) : null;
-    const allowSpokes = showSpokeLabels();
+    const allowSpokes = true;
 
     const addLabel = (id, priority, meta = {}) => {
       if (!id) return;
@@ -3056,6 +3564,7 @@ async function main() {
       d.textContent = displayName(c.name);
       if (c.isHub) d.classList.add("is-hub");
       if (c.isActiveHub) d.classList.add("is-active-hub");
+      if (c.isSpoke) d.classList.add("is-spoke");
       if (activeId && String(activeId) === String(c.id)) d.classList.add("is-active");
       d.addEventListener("mouseenter", () => {
         hoveredRailId = c.id;
@@ -3176,7 +3685,7 @@ async function main() {
         const id = String(n.id);
         return {
           id,
-          name: displayName(n.name || n.id),
+          name: displayName(nameForId(n.id)),
           sort: livingById.get(id),
           raw: livingRawById.get(id),
         };
@@ -3203,8 +3712,12 @@ async function main() {
       return;
     }
 
-    const nb = nbById().get(String(activeId));
-    renderNameWithBorough(hoverNameEl, displayName(nb?.name || activeId), nb?.borough, nb?.name_confidence);
+    renderNameWithBorough(
+      hoverNameEl,
+      displayName(nameForId(activeId)),
+      boroughForId(activeId),
+      confidenceForId(activeId),
+    );
 
     const d = livingDetailsById.get(String(activeId)) || null;
     if (!d) {
@@ -3299,13 +3812,13 @@ async function main() {
 
     renderSpokeList(closestEl, closest, (d) => {
       const line = d.line ? ` · ${d.line}` : "";
-      const name = displayName(d.name || d.id);
+      const name = displayName(nameForId(d.id || d.name));
       return `${name} — ${Math.round(d.minutes)} min${line}`;
     });
 
     renderSpokeList(teleportEl, teleporty, (d) => {
       const line = d.line ? ` · ${d.line}` : "";
-      const name = displayName(d.name || d.id);
+      const name = displayName(nameForId(d.id || d.name));
       const saved = formatSignedMinutes(Number(d.minutesSaved));
       return `${name} — ${saved} saved · ${Math.round(d.minutes)} min${line}`;
     });
@@ -3328,7 +3841,7 @@ async function main() {
     const rows = neighborhoods
       .map((n) => ({
         id: String(n.id),
-        name: displayName(n.name || n.id),
+        name: displayName(nameForId(n.id)),
         sort: centralityById.get(String(n.id)),
         raw: centralityRawById.get(String(n.id)),
       }))
@@ -3349,6 +3862,10 @@ async function main() {
     }
     if (mode === "living") {
       renderLivingPanel();
+      return;
+    }
+    if (mode === "views") {
+      renderViewsPanel();
       return;
     }
     if (!originId || !lastRun) {
@@ -3381,12 +3898,11 @@ async function main() {
       return;
     }
 
-    const destNb = nbById().get(String(activeDestId));
     renderNameWithBorough(
       destNameEl,
-      displayName(destNb?.name || activeDestId),
-      destNb?.borough,
-      destNb?.name_confidence,
+      displayName(nameForId(activeDestId)),
+      boroughForId(activeDestId),
+      confidenceForId(activeDestId),
     );
 
     const destMinutes = minsFromOriginToId(activeDestId);
@@ -3436,6 +3952,7 @@ async function main() {
   const init = async () => {
     clearError();
     try {
+      availableScalarKeys = await loadScalarManifest();
       tractsGeo = await fetchJson(`${DATA_DIR}/neighborhoods.geojson`);
       tractsScalars = await attachScalars(tractsGeo?.features || []);
       if (baseUnitRadios.length) {
@@ -3457,6 +3974,7 @@ async function main() {
       setupCentralityUi();
       setupLivingUi();
       setupCartogramUi();
+      setupViewsUi();
     } catch (err) {
       setStatus("Error loading data");
       showError(err?.message || "Failed to load map data. Run ./buildonly.sh and refresh.");
@@ -3474,6 +3992,7 @@ async function main() {
         setupCentralityUi();
         setupLivingUi();
         setupCartogramUi();
+        setupViewsUi();
       } catch (err) {
         setStatus("Error loading data");
         showError(err?.message || "Failed to load map data. Run ./buildonly.sh and refresh.");
@@ -3489,16 +4008,6 @@ async function main() {
     updateListsAndDirections();
   });
 
-  showHubHalosEl?.addEventListener("change", () => {
-    savePrefs();
-    renderHubMarkers();
-  });
-
-  showSpokeLabelsEl?.addEventListener("change", () => {
-    savePrefs();
-    renderLabels();
-  });
-
   for (const r of baseUnitRadios) {
     r.addEventListener("change", async () => {
       savePrefs();
@@ -3510,6 +4019,7 @@ async function main() {
         setupCentralityUi();
         setupLivingUi();
         setupCartogramUi();
+        setupViewsUi();
       } catch (err) {
         setStatus("Error loading data");
         showError(err?.message || "Failed to load map data. Run ./buildonly.sh and refresh.");

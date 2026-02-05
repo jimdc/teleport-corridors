@@ -60,14 +60,26 @@ def main() -> int:
         ]
     )
 
-    raw_scalars = repo_root / "data" / "raw" / "scalars_population.csv"
-    if raw_scalars.exists():
-        try:
-            import shutil
+    copied = []
+    for key in ("population", "housing_units", "jobs"):
+        raw_scalars = repo_root / "data" / "raw" / f"scalars_{key}.csv"
+        if raw_scalars.exists():
+            try:
+                import shutil
 
-            shutil.copyfile(raw_scalars, out_dir / "scalars_population.csv")
-        except Exception:
-            pass
+                shutil.copyfile(raw_scalars, out_dir / f"scalars_{key}.csv")
+                copied.append(key)
+            except Exception:
+                pass
+
+    # Write scalar manifest so the client only requests files that exist.
+    try:
+        import json
+
+        manifest = {"keys": sorted(set(copied))}
+        (out_dir / "scalars_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    except Exception:
+        pass
 
     # Build derived micro-units + derived neighborhoods.
     if derived_builder.exists():
