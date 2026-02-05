@@ -1,4 +1,9 @@
 const DATA_DIR = "./data";
+let reportError = (msg) => console.error(msg);
+
+function setReportError(fn) {
+  if (typeof fn === "function") reportError = fn;
+}
 
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
@@ -125,6 +130,11 @@ function getProfile() {
   return radios.find((r) => r.checked)?.value || "weekday_am";
 }
 
+function getBaseUnit() {
+  const radios = Array.from(document.querySelectorAll('input[name="baseUnit"]'));
+  return radios.find((r) => r.checked)?.value || "tract";
+}
+
 function getHub() {
   const radios = Array.from(document.querySelectorAll('input[name="hub"]'));
   return radios.find((r) => r.checked)?.value || "midtown";
@@ -191,10 +201,18 @@ function kMeans2D(points, k, iterations = 18) {
 
 function loadPrefs() {
   const p = localStorage.getItem("atlas.profile");
-  if (!p) return;
-  const radios = Array.from(document.querySelectorAll('input[name="profile"]'));
-  const match = radios.find((r) => r.value === p);
-  if (match) match.checked = true;
+  if (p) {
+    const radios = Array.from(document.querySelectorAll('input[name="profile"]'));
+    const match = radios.find((r) => r.value === p);
+    if (match) match.checked = true;
+  }
+
+  const u = localStorage.getItem("atlas.baseUnit") || "derived";
+  if (u) {
+    const baseRadios = Array.from(document.querySelectorAll('input[name="baseUnit"]'));
+    const um = baseRadios.find((r) => r.value === u);
+    if (um) um.checked = true;
+  }
 
   const h = localStorage.getItem("atlas.hub");
   if (h) {
@@ -217,6 +235,7 @@ function loadPrefs() {
 
 function savePrefs() {
   localStorage.setItem("atlas.profile", getProfile());
+  localStorage.setItem("atlas.baseUnit", getBaseUnit());
   localStorage.setItem("atlas.hub", getHub());
   const el = document.getElementById("includeInner");
   if (el) localStorage.setItem("atlas.includeInner", el.checked ? "1" : "0");
@@ -236,7 +255,11 @@ function setStatus(text) {
 
 async function fetchJson(path) {
   const res = await fetch(path);
-  if (!res.ok) throw new Error(`Failed to fetch ${path}: ${res.status}`);
+  if (!res.ok) {
+    const msg = `Failed to fetch ${path}: ${res.status}`;
+    reportError(msg);
+    throw new Error(msg);
+  }
   return await res.json();
 }
 
@@ -353,6 +376,7 @@ function renderList(el, entries, maxMinutes, includeInner) {
 async function main() {
   setStatus("Loading…");
   const status = document.getElementById("status");
+  const errorBannerEl = document.getElementById("errorBanner");
   const maxEl = document.getElementById("maxMinutes");
   const maxLabel = document.getElementById("maxMinutesLabel");
   const underratedEl = document.getElementById("underrated");
@@ -361,12 +385,69 @@ async function main() {
   const hubLabelA = document.getElementById("hubLabelA");
   const hubLabelB = document.getElementById("hubLabelB");
 
-  const [data, neighborhoodsGeo] = await Promise.all([
-    fetchJson(`${DATA_DIR}/teleport_corridors.json`),
-    fetchJson(`${DATA_DIR}/neighborhoods.geojson`),
-  ]);
-  setStatus("Ready");
+  const showError = (text) => {
+    if (errorBannerEl) {
+      errorBannerEl.textContent = text;
+      errorBannerEl.hidden = false;
+    }
+  };
+  const clearError = () => {
+    if (errorBannerEl) errorBannerEl.hidden = true;
+  };
+  setReportError((msg) => {
+    console.error(msg);
+    showError(msg);
+  });
+
+  const checkDerivedAvailable = async () => {
+    try {
+      const res = await fetch(`${DATA_DIR}/derived_regions.geojson`, { method: "HEAD" });
+      return res.ok;
+    } catch (err) {
+      return false;
+    }
+  };
+
   loadPrefs();
+  const derivedRadio = document.querySelector('input[name="baseUnit"][value="derived"]');
+  if (derivedRadio) {
+    const ok = await checkDerivedAvailable();
+    derivedRadio.disabled = !ok;
+    if (!ok && derivedRadio.checked) {
+      const fallback = document.querySelector('input[name="baseUnit"][value="tract"]');
+      if (fallback) fallback.checked = true;
+      localStorage.setItem("atlas.baseUnit", "tract");
+      showError("Derived data missing. Run ./buildonly.sh to generate derived files.");
+    }
+  }
+  let unit = getBaseUnit();
+  let suffix = unit === "derived" ? "_derived" : "";
+  let data;
+  let neighborhoodsGeo;
+  try {
+    [data, neighborhoodsGeo] = await Promise.all([
+      fetchJson(`${DATA_DIR}/teleport_corridors${suffix}.json`),
+      fetchJson(`${DATA_DIR}/${unit === "derived" ? "derived_regions.geojson" : "neighborhoods.geojson"}`),
+    ]);
+  } catch (err) {
+    if (suffix) {
+      // Fallback to tract data if derived artifacts are missing.
+      [data, neighborhoodsGeo] = await Promise.all([
+        fetchJson(`${DATA_DIR}/teleport_corridors.json`),
+        fetchJson(`${DATA_DIR}/neighborhoods.geojson`),
+      ]);
+      const fallback = document.querySelector('input[name="baseUnit"][value="tract"]');
+      if (fallback) fallback.checked = true;
+      localStorage.setItem("atlas.baseUnit", "tract");
+      unit = "tract";
+      suffix = "";
+      showError("Derived data missing. Falling back to Tracts. Run ./buildonly.sh to rebuild derived data.");
+    } else {
+      throw err;
+    }
+  }
+  clearError();
+  setStatus("Ready");
 
   // Triptych mini-map: render MBQ once, then update overlay on hover.
   const pathById = new Map();
@@ -509,7 +590,7 @@ async function main() {
 
   const routeColorByShort = async () => {
     const profile = getProfile();
-    const graph = await fetchJson(`${DATA_DIR}/graph_${profile}.json`);
+    const graph = await fetchJson(`${DATA_DIR}/graph_${profile}${suffix}.json`);
     const m = new Map();
     for (const r of graph?.routes || []) {
       if (r?.short_name && r?.color) m.set(String(r.short_name), String(r.color));
@@ -755,6 +836,12 @@ async function main() {
     r.addEventListener("change", () => {
       savePrefs();
       rerender();
+    });
+  }
+  for (const r of Array.from(document.querySelectorAll('input[name="baseUnit"]'))) {
+    r.addEventListener("change", () => {
+      savePrefs();
+      window.location.reload();
     });
   }
   document.getElementById("includeInner")?.addEventListener("change", () => {

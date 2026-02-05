@@ -358,6 +358,25 @@ main {
   user-select: none;
 }
 
+.hub-halo {
+  mix-blend-mode: multiply;
+}
+
+.hub-marker-ring {
+  vector-effect: non-scaling-stroke;
+}
+
+.hub-marker-core {
+}
+
+.rail-label.is-hub {
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.rail-label.is-active-hub {
+  color: rgba(2, 6, 23, 0.95);
+}
+
 #labelLeaders {
   position: absolute;
   inset: 0;
@@ -465,6 +484,29 @@ main {
   line-height: 1.35;
 }
 
+.error-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(254, 226, 226, 0.7);
+  color: rgba(153, 27, 27, 0.95);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.name-confidence {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.55);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .panel-controls {
   display: flex;
   flex-direction: column;
@@ -480,6 +522,44 @@ main {
 
 .hub-groups-right {
   align-items: flex-end;
+}
+
+.hub-chip-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hub-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.12);
+  color: rgba(67, 56, 202, 0.9);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.user-hub-group .boro-pill {
+  background: rgba(15, 23, 42, 0.08);
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.spoke-item {
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.spoke-item:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.spoke-item.is-pinned {
+  background: rgba(15, 23, 42, 0.12);
+  font-weight: 650;
 }
 
 ol {
@@ -575,6 +655,21 @@ main.page {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.4;
+}
+
+.page-text {
+  margin: 0;
+  color: rgba(15, 23, 42, 0.65);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.page-list {
+  margin: 0;
+  padding-left: 18px;
+  color: rgba(15, 23, 42, 0.65);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .page-grid {

@@ -17,6 +17,7 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parents[1]
     builder = repo_root / "tools" / "build_matrix.py"
+    derived_builder = repo_root / "tools" / "build_derived.py"
     out_dir = repo_root / "site" / "data"
 
     # Friendly hint for the common case.
@@ -58,6 +59,32 @@ def main() -> int:
             str(args.transfer_minutes),
         ]
     )
+
+    raw_scalars = repo_root / "data" / "raw" / "scalars_population.csv"
+    if raw_scalars.exists():
+        try:
+            import shutil
+
+            shutil.copyfile(raw_scalars, out_dir / "scalars_population.csv")
+        except Exception:
+            pass
+
+    # Build derived micro-units + derived neighborhoods.
+    if derived_builder.exists():
+        subprocess.check_call(
+            [
+                sys.executable,
+                str(derived_builder),
+                "--neighborhoods",
+                str(neighborhoods_path),
+                "--graph",
+                str(out_dir / "graph_weekday_am.json"),
+                "--matrix-dir",
+                str(out_dir),
+                "--out",
+                str(out_dir),
+            ]
+        )
 
     site_dir = repo_root / "site"
     handler = lambda *a, **kw: SimpleHTTPRequestHandler(*a, directory=str(site_dir), **kw)

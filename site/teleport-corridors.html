@@ -11,17 +11,29 @@
       <div class="title">
         <a class="brand" href="./">Teleport corridors</a>
         <span id="status" class="status">Loading…</span>
+        <span id="errorBanner" class="error-banner" hidden></span>
       </div>
 
       <nav class="nav">
-        <a class="nav-link" href="./">Map</a>
         <a class="nav-link" href="./centrality.html">Centrality</a>
         <a class="nav-link" href="./living.html">Teleportness</a>
         <a class="nav-link is-active" href="./teleport-corridors.html">Corridors</a>
         <a class="nav-link" href="./glossary.html">Glossary</a>
+        <a class="nav-link" href="./methodology.html">Methodology</a>
       </nav>
 
       <div class="controls">
+        <fieldset class="segmented" aria-label="Base unit">
+          <legend class="sr-only">Base unit</legend>
+          <label>
+            <input type="radio" name="baseUnit" value="tract" />
+            <span>Tracts</span>
+          </label>
+          <label>
+            <input type="radio" name="baseUnit" value="derived" checked />
+            <span>Derived</span>
+          </label>
+        </fieldset>
         <label>
           Max minutes
           <input id="maxMinutes" type="range" min="15" max="180" step="5" value="90" />

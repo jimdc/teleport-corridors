@@ -14,11 +14,11 @@
       </div>
 
       <nav class="nav">
-        <a class="nav-link" href="./">Map</a>
         <a class="nav-link" href="./centrality.html">Centrality</a>
         <a class="nav-link" href="./living.html">Teleportness</a>
         <a class="nav-link" href="./teleport-corridors.html">Corridors</a>
         <a class="nav-link is-active" href="./glossary.html">Glossary</a>
+        <a class="nav-link" href="./methodology.html">Methodology</a>
       </nav>
 
       <div class="controls"></div>
@@ -47,6 +47,26 @@
             <div class="glossary-term">Time profile (AM / PM / Weekend)</div>
             <div class="glossary-def">
               Separate “typical” schedules. Same geography, different travel times (rush hour vs off-peak patterns).
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Map mode (Geographic / Cartogram)</div>
+            <div class="glossary-def">
+              Geographic shows real shapes. Cartogram resizes neighborhoods so area encodes the selected metric (ex: population).
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Base unit (Tracts / Derived neighborhoods)</div>
+            <div class="glossary-def">
+              Tracts are the official statistical boundaries. Derived neighborhoods split them into smaller, transit-oriented regions
+              based on station catchments.
+            </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Derived name</div>
+            <div class="glossary-def">
+              A StreetEasy-style label assigned via local neighborhood polygons when possible. If ambiguous, the name uses a station
+              anchor and a short suffix (ex: “East Williamsburg · Lorimer”).
             </div>
           </div>
           <div class="glossary-item">
@@ -145,8 +165,13 @@
           <div class="glossary-item">
             <div class="glossary-term">Labels / Compact names</div>
             <div class="glossary-def">
-              Labels use side “rails” with leader lines (always on). Compact names shorten long neighborhood names to reduce clutter.
+              Labels use side “rails” with leader lines for the active hub, pinned/hovered neighborhoods, and a small set of spokes
+              (when enabled). Compact names shorten long neighborhood names to reduce clutter.
             </div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Hub halos</div>
+            <div class="glossary-def">A subtle glow around hubs to make their locations obvious at a glance.</div>
           </div>
         </div>
       </section>

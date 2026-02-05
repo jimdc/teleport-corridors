@@ -1,0 +1,45 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Midtown",
+        "borough": "Manhattan",
+        "sample": true
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-73.99, 40.745],
+            [-73.97, 40.745],
+            [-73.97, 40.76],
+            [-73.99, 40.76],
+            [-73.99, 40.745]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Williamsburg",
+        "borough": "Brooklyn",
+        "sample": true
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-73.97, 40.7],
+            [-73.94, 40.7],
+            [-73.94, 40.72],
+            [-73.97, 40.72],
+            [-73.97, 40.7]
+          ]
+        ]
+      }
+    }
+  ]
+}

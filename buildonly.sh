@@ -20,5 +20,14 @@ python3 tools/build_matrix.py \
   --neighborhoods "$NEIGHBORHOODS" \
   --out "$OUT"
 
-echo "Built data into $OUT"
+if [[ -f "data/raw/scalars_population.csv" ]]; then
+  cp "data/raw/scalars_population.csv" "$OUT/scalars_population.csv"
+fi
 
+python3 tools/build_derived.py \
+  --neighborhoods "$NEIGHBORHOODS" \
+  --graph "$OUT/graph_weekday_am.json" \
+  --matrix-dir "$OUT" \
+  --out "$OUT"
+
+echo "Built data into $OUT"

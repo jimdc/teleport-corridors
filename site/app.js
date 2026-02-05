@@ -3,9 +3,55 @@ const ISOCHRONE_MINUTES = [15, 30, 45, 60, 90, 120, 150, 180];
 const HUE_BY_LINE_ALWAYS_ON = true;
 const ISOCHRONES_ALWAYS_ON = true;
 const TELEPORT_EXPECTED_SPEED_KM_PER_MIN = 0.25; // ~15 km/h baseline for "minutes saved"
+const LABEL_BUDGET = 12;
+const SPOKE_LABEL_COUNT = 10;
+const HUB_HEX = {
+  manhattan: "#06b6d4",
+  brooklyn: "#10b981",
+  queens: "#f59e0b",
+};
 const LIVING_COLORS = {
   teleportness: { r: 16, g: 185, b: 129 }, // emerald
 };
+
+const SCALAR_REGISTRY = {
+  population: {
+    label: "Population",
+    valueKeys: [
+      "population",
+      "pop",
+      "POPULATION",
+      "POP",
+      "Pop",
+      "Population",
+      "TotalPop",
+      "TOTALPOP",
+      "TotPop",
+      "POP20",
+      "POP2020",
+      "POP2010",
+      "P0010001",
+    ],
+    provider: (feature, ctx = {}) => {
+      const props = feature?.properties || {};
+      const keys = SCALAR_REGISTRY.population.valueKeys || [];
+      for (const k of keys) {
+        const v = parseNumber(props[k]);
+        if (v != null) return v;
+      }
+      const id = String(props.atlas_id || "");
+      const csvMap = ctx.csv || null;
+      if (csvMap && id) {
+        const v = csvMap.get(id);
+        return v != null ? v : null;
+      }
+      return null;
+    },
+  },
+};
+
+const SCALAR_KEYS = Object.keys(SCALAR_REGISTRY);
+const DEFAULT_SCALAR_KEY = "population";
 
 function clamp01(v) {
   return Math.max(0, Math.min(1, v));
@@ -19,6 +65,21 @@ function quantile(sorted, q) {
   const a = sorted[base];
   const b = sorted[Math.min(sorted.length - 1, base + 1)];
   return a + (b - a) * rest;
+}
+
+function parseNumber(value) {
+  if (value == null) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const s = String(value).trim();
+  if (!s) return null;
+  const cleaned = s.replace(/,/g, "");
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatNumber(value) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return Math.round(value).toLocaleString("en-US");
 }
 
 function getMaxMinutes() {
@@ -44,6 +105,11 @@ function hexToRgb(hex) {
   const n = Number.parseInt(h, 16);
   if (!Number.isFinite(n)) return null;
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function hubColor(boroKeyValue, alpha = 0.65) {
+  const rgb = hexToRgb(HUB_HEX[boroKeyValue]) || { r: 99, g: 102, b: 241 };
+  return `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
 }
 
 function minutesToFillHue(mins, maxMinutes, hexColor) {
@@ -78,10 +144,111 @@ function formatRow(name, mins) {
   return `${name} — ${mins} min`;
 }
 
+let reportError = (msg) => console.error(msg);
+
+function setReportError(fn) {
+  if (typeof fn === "function") reportError = fn;
+}
+
 async function fetchJson(path) {
   const res = await fetch(path);
-  if (!res.ok) throw new Error(`Failed to fetch ${path}: ${res.status}`);
+  if (!res.ok) {
+    const msg = `Failed to fetch ${path}: ${res.status}`;
+    reportError(msg);
+    throw new Error(msg);
+  }
   return await res.json();
+}
+
+async function fetchText(path) {
+  const res = await fetch(path);
+  if (!res.ok) return null;
+  return await res.text();
+}
+
+function parseCsvToMap(text, { idKeys = [], valueKeys = [] } = {}) {
+  if (!text) return new Map();
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return new Map();
+  const header = lines[0].split(",").map((h) => h.trim());
+  const colIndex = (keys) => {
+    for (const k of keys) {
+      const idx = header.findIndex((h) => h.toLowerCase() === String(k).toLowerCase());
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  };
+  const idIdx = colIndex(idKeys);
+  const valIdx = colIndex(valueKeys);
+  if (idIdx < 0 || valIdx < 0) return new Map();
+
+  const out = new Map();
+  for (let i = 1; i < lines.length; i++) {
+    const row = lines[i].split(",").map((v) => v.trim());
+    const id = row[idIdx];
+    const val = parseNumber(row[valIdx]);
+    if (!id || val == null) continue;
+    out.set(String(id), val);
+  }
+  return out;
+}
+
+async function loadScalarCsv(key) {
+  const path = `${DATA_DIR}/scalars_${key}.csv`;
+  const text = await fetchText(path);
+  if (!text) return null;
+  const idKeys = ["atlas_id", "id", "nta", "NTACode", "nta_code"];
+  const valueKeys = [key, "population", "pop", "value"];
+  return parseCsvToMap(text, { idKeys, valueKeys });
+}
+
+async function attachScalars(features) {
+  if (!features || !features.length) return new Map();
+  const scalarValuesByKey = new Map();
+  const csvByKey = new Map();
+  for (const key of SCALAR_KEYS) {
+    scalarValuesByKey.set(key, new Map());
+    csvByKey.set(key, await loadScalarCsv(key));
+  }
+
+  for (const feat of features) {
+    const props = feat?.properties ? { ...feat.properties } : {};
+    const id = String(props.atlas_id || "");
+    if (!props.scalars) props.scalars = {};
+    feat.properties = props;
+
+    for (const key of SCALAR_KEYS) {
+      let v = null;
+      if (props.scalars && props.scalars[key] != null) {
+        const n = parseNumber(props.scalars[key]);
+        if (n != null) v = n;
+      }
+      const csvMap = csvByKey.get(key) || null;
+      const provider = SCALAR_REGISTRY[key]?.provider;
+      if (v == null && typeof provider === "function") {
+        v = provider(feat, { csv: csvMap });
+      }
+      if (v == null) {
+        const keys = SCALAR_REGISTRY[key]?.valueKeys || [];
+        for (const k of keys) {
+          if (props[k] != null) {
+            const n = parseNumber(props[k]);
+            if (n != null) {
+              v = n;
+              break;
+            }
+          }
+        }
+      }
+      if (v == null && csvMap && id) v = csvMap.get(id) ?? null;
+      if (v != null && Number.isFinite(v)) {
+        props.scalars[key] = v;
+        scalarValuesByKey.get(key)?.set(id, v);
+      }
+    }
+  }
+
+  return scalarValuesByKey;
 }
 
 function setList(el, rows) {
@@ -96,6 +263,7 @@ function setList(el, rows) {
 
 function featureName(props) {
   return (
+    props.primary_name ||
     props.name ||
     props.NTAName ||
     props.nta_name ||
@@ -132,7 +300,7 @@ function boroughAbbrev(name) {
   return "";
 }
 
-function renderNameWithBorough(el, name, boroughName) {
+function renderNameWithBorough(el, name, boroughName, confidence = null) {
   if (!el) return;
   el.replaceChildren();
   const b = boroughAbbrev(boroughName);
@@ -145,6 +313,12 @@ function renderNameWithBorough(el, name, boroughName) {
     el.appendChild(document.createTextNode(" "));
   }
   el.appendChild(document.createTextNode(String(name || "")));
+  if (confidence != null && Number.isFinite(confidence)) {
+    const badge = document.createElement("span");
+    badge.className = "name-confidence";
+    badge.textContent = `conf ${Math.round(confidence * 100)}%`;
+    el.appendChild(badge);
+  }
 }
 
 function updatePanel({ originIndex, neighborhoods, minutesRow, routeRow, routes, nameFn }) {
@@ -174,7 +348,7 @@ function updatePanel({ originIndex, neighborhoods, minutesRow, routeRow, routes,
   }
 
   const origin = neighborhoods[originIndex];
-  renderNameWithBorough(originNameEl, fmt(origin.name || origin.id), origin.borough);
+  renderNameWithBorough(originNameEl, fmt(origin.name || origin.id), origin.borough, origin.name_confidence);
 
   const rows = neighborhoods.map((n, idx) => ({
     idx,
@@ -258,6 +432,113 @@ function* iterLonLatCoords(geometry) {
   } else if (t === "Point") {
     if (Array.isArray(c) && c.length >= 2) yield [c[0], c[1]];
   }
+}
+
+function computeViewBox(geojson) {
+  const bounds = computeProjectedBounds(geojson);
+  const padX = (bounds.maxX - bounds.minX) * 0.03;
+  const padY = (bounds.maxY - bounds.minY) * 0.03;
+  return {
+    x: bounds.minX - padX,
+    y: bounds.minY - padY,
+    w: (bounds.maxX - bounds.minX) + 2 * padX,
+    h: (bounds.maxY - bounds.minY) + 2 * padY,
+  };
+}
+
+function formatScalarValue(key, value) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (key === "population") return `${formatNumber(value)} people`;
+  return formatNumber(value);
+}
+
+function computeDorlingCartogram({
+  features,
+  scalarKey,
+  getValue,
+  getCentroid,
+  viewBox,
+  iterations = 360,
+  anchorStrength = 0.12,
+  collisionStrength = 0.5,
+  padding = 0.00015,
+  minRadius = 0.00007,
+  clampQuantile = null,
+} = {}) {
+  if (!features || !features.length) return [];
+  const nodes = [];
+  const values = [];
+
+  for (const feat of features) {
+    const props = feat?.properties || {};
+    const id = String(props.atlas_id || "");
+    if (!id) continue;
+    const c = getCentroid ? getCentroid(feat) : null;
+    if (!c) continue;
+    const v = getValue ? getValue(feat, scalarKey) : null;
+    if (v != null && Number.isFinite(v)) values.push(v);
+    nodes.push({
+      id,
+      x0: c.x,
+      y0: c.y,
+      x: c.x,
+      y: c.y,
+      value: v,
+    });
+  }
+
+  if (!nodes.length) return [];
+
+  const finite = values.slice().sort((a, b) => a - b);
+  let cap = null;
+  if (clampQuantile != null && finite.length) {
+    cap = quantile(finite, clampQuantile);
+  }
+
+  const areaScale = (val) => {
+    if (val == null || !Number.isFinite(val) || val <= 0) return 0;
+    const v = cap != null && Number.isFinite(cap) ? Math.min(val, cap) : val;
+    return Math.sqrt(v / Math.PI);
+  };
+
+  const rawAreas = nodes.map((n) => areaScale(n.value)).filter((v) => v > 0);
+  const medianRaw = rawAreas.length ? quantile(rawAreas.sort((a, b) => a - b), 0.5) : 1;
+  const targetMedianRadius = viewBox ? Math.min(viewBox.w, viewBox.h) * 0.017 : 0.002;
+  const k = medianRaw > 0 ? targetMedianRadius / medianRaw : 1;
+
+  for (const n of nodes) {
+    const r0 = k * areaScale(n.value);
+    n.r = Math.max(minRadius, Number.isFinite(r0) && r0 > 0 ? r0 : minRadius);
+  }
+
+  for (let iter = 0; iter < iterations; iter++) {
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 0.000001;
+        const minDist = a.r + b.r + padding;
+        if (dist >= minDist) continue;
+        const overlap = (minDist - dist) * collisionStrength;
+        const ux = dx / dist;
+        const uy = dy / dist;
+        const shift = overlap * 0.5;
+        a.x -= ux * shift;
+        a.y -= uy * shift;
+        b.x += ux * shift;
+        b.y += uy * shift;
+      }
+    }
+
+    for (const n of nodes) {
+      n.x += (n.x0 - n.x) * anchorStrength;
+      n.y += (n.y0 - n.y) * anchorStrength;
+    }
+  }
+
+  return nodes;
 }
 
 function geometryToPathD(geometry) {
@@ -436,43 +717,63 @@ function installPanZoom(svg, { onViewBoxChange } = {}) {
   );
 }
 
-function renderGeojson(svg, geojson, onClickFeature) {
+function renderGeojson(svg, geojson, onClickFeature, options = {}) {
   svg.replaceChildren();
 
   svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
 
+  const gOutline = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const gPolys = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const gHubHalos = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const gIsochrones = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const gOverlay = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const gOverlayRoutes = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const gOverlayStops = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const gLivingNodes = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const gHubMarkers = document.createElementNS("http://www.w3.org/2000/svg", "g");
   // Overlays should never block neighborhood clicks/drags.
   gIsochrones.setAttribute("pointer-events", "none");
   gOverlay.setAttribute("pointer-events", "none");
   gOverlayRoutes.setAttribute("pointer-events", "none");
   gOverlayStops.setAttribute("pointer-events", "none");
   gLivingNodes.setAttribute("pointer-events", "none");
+  gHubHalos.setAttribute("pointer-events", "none");
+  gHubMarkers.setAttribute("pointer-events", "none");
+  gOutline.setAttribute("pointer-events", "none");
   gOverlay.appendChild(gOverlayRoutes);
   gOverlay.appendChild(gOverlayStops);
   gOverlay.appendChild(gLivingNodes);
+  svg.appendChild(gOutline);
+  svg.appendChild(gHubHalos);
   svg.appendChild(gPolys);
   svg.appendChild(gIsochrones);
   svg.appendChild(gOverlay);
+  svg.appendChild(gHubMarkers);
 
-  const bounds = computeProjectedBounds(geojson);
-  const padX = (bounds.maxX - bounds.minX) * 0.03;
-  const padY = (bounds.maxY - bounds.minY) * 0.03;
-  const vb = {
-    x: bounds.minX - padX,
-    y: bounds.minY - padY,
-    w: (bounds.maxX - bounds.minX) + 2 * padX,
-    h: (bounds.maxY - bounds.minY) + 2 * padY,
-  };
+  const vb = options.viewBox || computeViewBox(geojson);
   setSvgViewBox(svg, vb);
 
   const pathById = new Map();
+
+  const outlineGeo = options.outlineGeo;
+  const outlineStyle = options.outlineStyle || {};
+  if (outlineGeo?.features?.length) {
+    for (const feat of outlineGeo.features || []) {
+      const d = geometryToPathD(feat.geometry);
+      if (!d) continue;
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", d);
+      path.setAttribute("vector-effect", "non-scaling-stroke");
+      path.setAttribute("fill", outlineStyle.fill || "none");
+      path.setAttribute("stroke", outlineStyle.stroke || "rgba(15,23,42,0.55)");
+      path.setAttribute("stroke-width", String(outlineStyle.strokeWidth ?? 2.2));
+      path.setAttribute("stroke-linejoin", "round");
+      path.setAttribute("stroke-linecap", "round");
+      if (outlineStyle.opacity != null) path.setAttribute("opacity", String(outlineStyle.opacity));
+      gOutline.appendChild(path);
+    }
+  }
 
   for (const feat of geojson.features || []) {
     const props = feat.properties || {};
@@ -487,9 +788,14 @@ function renderGeojson(svg, geojson, onClickFeature) {
     path.setAttribute("stroke", "rgba(15,23,42,0.35)");
     path.setAttribute("stroke-width", "1.2");
     path.style.cursor = "pointer";
+    path.style.pointerEvents = "all";
 
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    title.textContent = String(featureName(props));
+    if (typeof options.titleFn === "function") {
+      title.textContent = String(options.titleFn(feat, props) || featureName(props));
+    } else {
+      title.textContent = String(featureName(props));
+    }
     path.appendChild(title);
 
     path.addEventListener("click", (e) => {
@@ -508,7 +814,97 @@ function renderGeojson(svg, geojson, onClickFeature) {
     pathById.set(id, path);
   }
 
-  return { pathById, gIsochrones, gOverlayRoutes, gOverlayStops, gLivingNodes, initialViewBox: vb };
+  return {
+    pathById,
+    gIsochrones,
+    gOverlayRoutes,
+    gOverlayStops,
+    gLivingNodes,
+    gHubHalos,
+    gHubMarkers,
+    initialViewBox: vb,
+  };
+}
+
+function renderCartogram(svg, nodes, onClickFeature, options = {}) {
+  svg.replaceChildren();
+
+  svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+  const gPolys = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const gHubHalos = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const gIsochrones = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const gOverlay = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const gOverlayRoutes = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const gOverlayStops = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const gLivingNodes = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const gHubMarkers = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  gIsochrones.setAttribute("pointer-events", "none");
+  gOverlay.setAttribute("pointer-events", "none");
+  gOverlayRoutes.setAttribute("pointer-events", "none");
+  gOverlayStops.setAttribute("pointer-events", "none");
+  gLivingNodes.setAttribute("pointer-events", "none");
+  gHubHalos.setAttribute("pointer-events", "none");
+  gHubMarkers.setAttribute("pointer-events", "none");
+  gOverlay.appendChild(gOverlayRoutes);
+  gOverlay.appendChild(gOverlayStops);
+  gOverlay.appendChild(gLivingNodes);
+  svg.appendChild(gHubHalos);
+  svg.appendChild(gPolys);
+  svg.appendChild(gIsochrones);
+  svg.appendChild(gOverlay);
+  svg.appendChild(gHubMarkers);
+
+  const vb = options.viewBox;
+  if (vb) setSvgViewBox(svg, vb);
+
+  const pathById = new Map();
+  for (const n of nodes) {
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", String(n.x));
+    circle.setAttribute("cy", String(n.y));
+    circle.setAttribute("r", String(n.r));
+    circle.setAttribute("vector-effect", "non-scaling-stroke");
+    circle.setAttribute("fill", "rgba(0,0,0,0)");
+    circle.setAttribute("stroke", "rgba(15,23,42,0.35)");
+    circle.setAttribute("stroke-width", "1.2");
+    circle.style.cursor = "pointer";
+    circle.style.pointerEvents = "all";
+
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    if (typeof options.titleFn === "function") {
+      title.textContent = String(options.titleFn(n) || n.id);
+    } else {
+      title.textContent = String(n.id);
+    }
+    circle.appendChild(title);
+
+    circle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClickFeature(n.id, e);
+    });
+    circle.addEventListener("pointerenter", () => {
+      if (typeof onClickFeature.onHover === "function") onClickFeature.onHover(n.id);
+    });
+    circle.addEventListener("pointerleave", () => {
+      if (typeof onClickFeature.onHoverEnd === "function") onClickFeature.onHoverEnd(n.id);
+    });
+
+    gPolys.appendChild(circle);
+    pathById.set(String(n.id), circle);
+  }
+
+  return {
+    pathById,
+    gIsochrones,
+    gOverlayRoutes,
+    gOverlayStops,
+    gLivingNodes,
+    gHubHalos,
+    gHubMarkers,
+    initialViewBox: vb,
+  };
 }
 
 class MinHeap {
@@ -600,12 +996,21 @@ function reconstructStopPath(prev, start, dest) {
 
 async function main() {
   const statusEl = document.getElementById("status");
+  const errorBannerEl = document.getElementById("errorBanner");
   const viewModeEl = document.getElementById("viewMode");
   const profileRadios = Array.from(document.querySelectorAll('input[name="profile"]'));
   const maxMinutesEl = document.getElementById("maxMinutes");
   const maxMinutesLabelEl = document.getElementById("maxMinutesLabel");
   const legendMaxEl = document.getElementById("legendMax");
   const compactNamesEl = document.getElementById("compactNames");
+  const showHubHalosEl = document.getElementById("showHubHalos");
+  const showSpokeLabelsEl = document.getElementById("showSpokeLabels");
+  const mapModeRadios = Array.from(document.querySelectorAll('input[name="mapMode"]'));
+  const baseUnitRadios = Array.from(document.querySelectorAll('input[name="baseUnit"]'));
+  const cartogramScalarSelectEl = document.getElementById("cartogramScalarSelect");
+  const cartogramScalarValueEl = document.getElementById("cartogramScalarValue");
+  const cartogramScalarWrapEl = document.getElementById("cartogramScalarWrap");
+  const cartogramLegendNoteEl = document.getElementById("cartogramLegendNote");
   const svg = document.getElementById("mapSvg");
   const leadersSvg = document.getElementById("labelLeaders");
   const labelRailLeftEl = document.getElementById("labelRailLeft");
@@ -616,26 +1021,77 @@ async function main() {
     return checked?.value || "weekday_am";
   };
 
+  const getMapMode = () => {
+    const checked = mapModeRadios.find((r) => r.checked);
+    return checked?.value || "geographic";
+  };
+
+  const getBaseUnit = () => {
+    const checked = baseUnitRadios.find((r) => r.checked);
+    return checked?.value || "tract";
+  };
+
+  const showHubHalos = () => (showHubHalosEl ? showHubHalosEl.checked : true);
+  const showSpokeLabels = () => (showSpokeLabelsEl ? showSpokeLabelsEl.checked : true);
+
   const loadPrefs = () => {
     if (compactNamesEl) {
       const c = localStorage.getItem("atlas.compactNames");
       compactNamesEl.checked = c == null ? true : c === "1";
+    }
+    if (showHubHalosEl) {
+      const v = localStorage.getItem("atlas.showHubHalos");
+      showHubHalosEl.checked = v == null ? true : v === "1";
+    }
+    if (showSpokeLabelsEl) {
+      const v = localStorage.getItem("atlas.showSpokeLabels");
+      showSpokeLabelsEl.checked = v == null ? true : v === "1";
     }
     const p = localStorage.getItem("atlas.profile");
     if (p && profileRadios.length) {
       const match = profileRadios.find((r) => r.value === p);
       if (match) match.checked = true;
     }
+    if (mapModeRadios.length) {
+      const m = localStorage.getItem("atlas.mapMode") || "geographic";
+      const match = mapModeRadios.find((r) => r.value === m);
+      if (match) match.checked = true;
+    }
+    if (baseUnitRadios.length) {
+      const u = localStorage.getItem("atlas.baseUnit") || "derived";
+      const match = baseUnitRadios.find((r) => r.value === u);
+      if (match) match.checked = true;
+    }
   };
 
   const savePrefs = () => {
     if (compactNamesEl) localStorage.setItem("atlas.compactNames", compactNamesEl.checked ? "1" : "0");
+    if (showHubHalosEl) localStorage.setItem("atlas.showHubHalos", showHubHalosEl.checked ? "1" : "0");
+    if (showSpokeLabelsEl) localStorage.setItem("atlas.showSpokeLabels", showSpokeLabelsEl.checked ? "1" : "0");
     if (profileRadios.length) localStorage.setItem("atlas.profile", getProfile());
+    if (mapModeRadios.length) localStorage.setItem("atlas.mapMode", getMapMode());
+    if (baseUnitRadios.length) localStorage.setItem("atlas.baseUnit", getBaseUnit());
   };
 
   const setStatus = (text) => {
     if (statusEl) statusEl.textContent = text;
   };
+
+  const showError = (text) => {
+    if (errorBannerEl) {
+      errorBannerEl.textContent = text;
+      errorBannerEl.hidden = false;
+    }
+  };
+
+  const clearError = () => {
+    if (errorBannerEl) errorBannerEl.hidden = true;
+  };
+
+  setReportError((msg) => {
+    console.error(msg);
+    showError(msg);
+  });
 
   let scheduleLabelsRerender = null;
 
@@ -663,18 +1119,6 @@ async function main() {
     scheduleLabelsRerender?.();
   };
 
-  const neighborhoodsGeo = await fetchJson(`${DATA_DIR}/neighborhoods.geojson`);
-  const triFeatures = (neighborhoodsGeo?.features || []).filter((f) => isTriBorough(getBorough(f?.properties || {})));
-  const visibleGeo =
-    triFeatures.length > 0
-      ? { type: "FeatureCollection", features: triFeatures }
-      : neighborhoodsGeo;
-  const visibleIds = new Set(
-    (visibleGeo?.features || [])
-      .map((f) => String((f?.properties || {}).atlas_id || ""))
-      .filter(Boolean),
-  );
-
   let neighborhoods = [];
   let routes = [];
   let stops = [];
@@ -684,6 +1128,14 @@ async function main() {
   let matrixRoutes = []; // routes referenced by matrix.first_route (filtered)
   let firstRouteMatrix = null; // neighborhood x neighborhood first-route indices (filtered)
   let centralityConfig = null; // matrix centrality payload (filtered)
+  let scalarValuesByKey = new Map();
+  let cartogramScalarKey = DEFAULT_SCALAR_KEY;
+  let cartogramNodesById = new Map();
+  let cartogramScaleById = new Map();
+  let cartogramCacheKey = null;
+  let baseViewBox = null;
+  let visibleGeo = null;
+  let visibleIds = new Set();
   let originId = null;
   let hoveredDestId = null;
   let pinnedDestId = null;
@@ -698,6 +1150,11 @@ async function main() {
   let centralityHigherIsBetter = true;
   let centralityStats = { min: 0, max: 1 };
   let hoveredRailId = null;
+  let hubPresetIdByKey = new Map();
+  let hubPresetById = new Map();
+  let hubCentralityIsUser = false;
+  let livingHubIsUser = false;
+  let centralityMetricKey = "hub";
 
   // Living mode: map-level metrics aimed at “underrated to live in”.
   let livingMetricKey = "teleportness"; // teleportness only (for now)
@@ -706,6 +1163,65 @@ async function main() {
   let livingExcludeShortTrips = true;
   let livingColorKey = "teleportness";
   let livingRawHigherIsBetter = true;
+
+  let tractsGeo = null;
+  let tractsScalars = new Map();
+  let derivedGeo = null;
+  let derivedScalars = null;
+  let derivedLoaded = false;
+
+  const ensureDerivedGeo = async () => {
+    if (derivedLoaded) return derivedGeo;
+    derivedLoaded = true;
+    try {
+      derivedGeo = await fetchJson(`${DATA_DIR}/derived_regions.geojson`);
+      derivedScalars = await attachScalars(derivedGeo?.features || []);
+    } catch (err) {
+      derivedGeo = null;
+      derivedScalars = null;
+    }
+    return derivedGeo;
+  };
+
+  const checkDerivedAvailable = async () => {
+    try {
+      const res = await fetch(`${DATA_DIR}/derived_regions.geojson`, { method: "HEAD" });
+      return res.ok;
+    } catch (err) {
+      return false;
+    }
+  };
+
+  const applyBaseUnit = async () => {
+    let unit = getBaseUnit();
+    let geo = tractsGeo;
+    let scalars = tractsScalars;
+
+    if (unit === "derived") {
+      await ensureDerivedGeo();
+      if (derivedGeo) {
+        geo = derivedGeo;
+        scalars = derivedScalars || new Map();
+      } else {
+        unit = "tract";
+        const fallback = baseUnitRadios.find((r) => r.value === "tract");
+        if (fallback) fallback.checked = true;
+        localStorage.setItem("atlas.baseUnit", "tract");
+        showError("Derived data missing. Run ./buildonly.sh to generate derived files.");
+      }
+    }
+
+    scalarValuesByKey = scalars;
+    const triFeatures = (geo?.features || []).filter((f) => isTriBorough(getBorough(f?.properties || {})));
+    visibleGeo = triFeatures.length > 0 ? { type: "FeatureCollection", features: triFeatures } : geo;
+    visibleIds = new Set(
+      (visibleGeo?.features || [])
+        .map((f) => String((f?.properties || {}).atlas_id || ""))
+        .filter(Boolean),
+    );
+    baseViewBox = computeViewBox(visibleGeo);
+    cartogramCacheKey = null;
+  };
   let livingLabel = "Teleportness";
   let livingById = new Map(); // oriented so "higher is better"
   let livingRawById = new Map(); // raw values (minutes saved, walk minutes, line count)
@@ -775,10 +1291,32 @@ async function main() {
   const displayName = (raw) => (isCompactNames() ? shortenName(raw) : String(raw || ""));
 
   const loadMatrix = async (profile) => {
-    const [graph, matrix] = await Promise.all([
-      fetchJson(`${DATA_DIR}/graph_${profile}.json`),
-      fetchJson(`${DATA_DIR}/matrix_${profile}.json`),
-    ]);
+    const unitSuffix = getBaseUnit() === "derived" ? "_derived" : "";
+    let graph;
+    let matrix;
+    try {
+      [graph, matrix] = await Promise.all([
+        fetchJson(`${DATA_DIR}/graph_${profile}${unitSuffix}.json`),
+        fetchJson(`${DATA_DIR}/matrix_${profile}${unitSuffix}.json`),
+      ]);
+    } catch (err) {
+      if (unitSuffix) {
+        // Fallback to tracts if derived data is missing.
+        const [g, m] = await Promise.all([
+          fetchJson(`${DATA_DIR}/graph_${profile}.json`),
+          fetchJson(`${DATA_DIR}/matrix_${profile}.json`),
+        ]);
+        graph = g;
+        matrix = m;
+        const fallback = baseUnitRadios.find((r) => r.value === "tract");
+        if (fallback) fallback.checked = true;
+        localStorage.setItem("atlas.baseUnit", "tract");
+        await applyBaseUnit();
+        showError("Derived data missing. Falling back to Tracts. Run ./buildonly.sh to rebuild derived data.");
+      } else {
+        throw err;
+      }
+    }
     const allNeighborhoods = graph.neighborhoods || [];
     const keptNeighborhoods = [];
     const keptOrigIdx = [];
@@ -878,11 +1416,112 @@ async function main() {
       adjacency[from].push({ to, w: minutes, routeIdx: routeIdx ?? null });
     }
 
+    buildHubIndex();
+    hubSpokeCache.clear();
+
   };
 
   const nbById = () => new Map(neighborhoods.map((n) => [String(n.id), n]));
 
   const indexById = () => new Map(neighborhoods.map((n, i) => [String(n.id), i]));
+
+  const getScalarValueById = (id, key) => {
+    const map = scalarValuesByKey.get(key);
+    if (!map) return null;
+    const v = map.get(String(id));
+    return v != null && Number.isFinite(v) ? v : null;
+  };
+
+  const updateCartogramScalar = (id) => {
+    if (!cartogramScalarValueEl) return;
+    if (getMapMode() !== "cartogram") {
+      cartogramScalarValueEl.textContent = "";
+      cartogramScalarValueEl.hidden = true;
+      return;
+    }
+    if (!id) {
+      cartogramScalarValueEl.textContent = "";
+      cartogramScalarValueEl.hidden = true;
+      return;
+    }
+    const val = getScalarValueById(id, cartogramScalarKey);
+    const label = SCALAR_REGISTRY[cartogramScalarKey]?.label || cartogramScalarKey;
+    if (val == null) {
+      cartogramScalarValueEl.textContent = `${label}: —`;
+    } else {
+      cartogramScalarValueEl.textContent = `${label}: ${formatScalarValue(cartogramScalarKey, val)}`;
+    }
+    cartogramScalarValueEl.hidden = false;
+  };
+
+  const getScalarValueForFeature = (feature, key) => {
+    const props = feature?.properties || {};
+    const scalars = props.scalars || {};
+    const v = scalars[key];
+    return v != null && Number.isFinite(v) ? v : null;
+  };
+
+  const getProjectedCentroidForFeature = (feature) => {
+    const props = feature?.properties || {};
+    const id = String(props.atlas_id || "");
+    const nb = nbById().get(id);
+    const c = nb?.centroid;
+    if (Array.isArray(c) && c.length >= 2) {
+      const [lat, lon] = c;
+      const [x, y] = projectLonLat([lon, lat]);
+      return { x, y, lat, lon };
+    }
+    // Fallback: approximate centroid from geometry.
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    for (const [lon, lat] of iterLonLatCoords(feature?.geometry)) {
+      const [x, y] = projectLonLat([lon, lat]);
+      sumX += x;
+      sumY += y;
+      count += 1;
+    }
+    if (!count) return null;
+    return { x: sumX / count, y: sumY / count };
+  };
+
+  const ensureCartogram = () => {
+    const key = cartogramScalarKey || DEFAULT_SCALAR_KEY;
+    const cacheKey = `${key}:${visibleGeo?.features?.length || 0}`;
+    if (cartogramCacheKey === cacheKey && cartogramNodesById.size) return;
+    const features = visibleGeo?.features || [];
+    const nodes = [];
+    const values = [];
+    for (const feat of features) {
+      const props = feat?.properties || {};
+      const id = String(props.atlas_id || "");
+      if (!id) continue;
+      const c = getProjectedCentroidForFeature(feat);
+      if (!c) continue;
+      const v = getScalarValueForFeature(feat, key);
+      if (v != null && Number.isFinite(v)) values.push(v);
+      nodes.push({ id, x: c.x, y: c.y, value: v });
+    }
+
+    const finite = values.slice().sort((a, b) => a - b);
+    const median = quantile(finite, 0.5) ?? 1;
+    const cap = quantile(finite, 0.95);
+    const minScale = 0.45;
+    const maxScale = 2.6;
+    cartogramScaleById = new Map();
+    for (const n of nodes) {
+      let val = n.value;
+      if (val == null || !Number.isFinite(val)) val = median;
+      if (cap != null && Number.isFinite(cap)) val = Math.min(val, cap);
+      let scale = median > 0 ? Math.sqrt(val / median) : 1;
+      if (!Number.isFinite(scale) || scale <= 0) scale = 1;
+      scale = Math.max(minScale, Math.min(maxScale, scale));
+      cartogramScaleById.set(String(n.id), scale);
+    }
+
+    cartogramNodesById = new Map(nodes.map((n) => [String(n.id), n]));
+    cartogramCacheKey = cacheKey;
+  };
 
   const setCentralityFromScores = ({ label, higherIsBetter, scoresByIndex, rawUnit }) => {
     centralityLabel = label || "Centrality";
@@ -936,19 +1575,24 @@ async function main() {
 
   const isCentralityPage = document.body.classList.contains("centrality-page");
   const isLivingPage = document.body.classList.contains("living-page");
+  const getViewMode = () => {
+    if (isCentralityPage) return "centrality";
+    if (isLivingPage) return "living";
+    return viewModeEl?.value || "time";
+  };
   let hubCentralityHubId = null;
   let hubCentralityHubLabel = "Midtown";
 
   const presetHubs = [
-    { key: "midtown", label: "Midtown", lat: 40.754, lon: -73.984 },
-    { key: "downtown", label: "Downtown", lat: 40.707, lon: -74.011 },
-    { key: "williamsburg", label: "Williamsburg", lat: 40.711, lon: -73.958 },
-    { key: "downtown_bk", label: "Downtown BK", lat: 40.692, lon: -73.985 },
-    { key: "lic", label: "LIC", lat: 40.744, lon: -73.949 },
-    { key: "hudson_yards", label: "Hudson Yards", lat: 40.754, lon: -74.002 },
-    { key: "greenpoint", label: "Greenpoint", lat: 40.729, lon: -73.955 },
-    { key: "bushwick", label: "Bushwick", lat: 40.695, lon: -73.918 },
-    { key: "astoria", label: "Astoria", lat: 40.764, lon: -73.923 },
+    { key: "midtown", label: "Midtown", lat: 40.754, lon: -73.984, boro: "manhattan" },
+    { key: "downtown", label: "Downtown", lat: 40.707, lon: -74.011, boro: "manhattan" },
+    { key: "hudson_yards", label: "Hudson Yards", lat: 40.754, lon: -74.002, boro: "manhattan" },
+    { key: "williamsburg", label: "Williamsburg", lat: 40.711, lon: -73.958, boro: "brooklyn" },
+    { key: "downtown_bk", label: "Downtown BK", lat: 40.692, lon: -73.985, boro: "brooklyn" },
+    { key: "greenpoint", label: "Greenpoint", lat: 40.729, lon: -73.955, boro: "brooklyn" },
+    { key: "bushwick", label: "Bushwick", lat: 40.695, lon: -73.918, boro: "brooklyn" },
+    { key: "lic", label: "LIC", lat: 40.744, lon: -73.949, boro: "queens" },
+    { key: "astoria", label: "Astoria", lat: 40.764, lon: -73.923, boro: "queens" },
   ];
 
   const nearestNeighborhoodId = (lat, lon) => {
@@ -964,6 +1608,51 @@ async function main() {
       }
     }
     return bestId;
+  };
+
+  const buildHubIndex = () => {
+    hubPresetIdByKey = new Map();
+    hubPresetById = new Map();
+
+    const featureById = new Map();
+    for (const feat of visibleGeo?.features || []) {
+      const props = feat?.properties || {};
+      const id = String(props.atlas_id || "");
+      if (!id) continue;
+      featureById.set(id, feat);
+      if (props.is_hub) {
+        delete props.is_hub;
+        delete props.hub_key;
+        delete props.hub_label;
+        delete props.hub_boro;
+      }
+    }
+
+    for (const h of presetHubs) {
+      const id = nearestNeighborhoodId(h.lat, h.lon);
+      if (!id) continue;
+      hubPresetIdByKey.set(h.key, id);
+      const entry = { ...h, id };
+      hubPresetById.set(id, entry);
+      const feat = featureById.get(id);
+      if (feat) {
+        const props = feat.properties || {};
+        props.is_hub = true;
+        props.hub_key = h.key;
+        props.hub_label = h.label;
+        props.hub_boro = h.boro || "";
+        feat.properties = props;
+      }
+    }
+
+    for (const n of neighborhoods) {
+      const id = String(n.id);
+      const hub = hubPresetById.get(id);
+      n.isHub = !!hub;
+      n.hubKey = hub?.key || null;
+      n.hubLabel = hub?.label || null;
+      n.hubBoro = hub?.boro || null;
+    }
   };
 
   const applyHubCentrality = () => {
@@ -991,6 +1680,10 @@ async function main() {
     const hubControlsEl = document.getElementById("hubControls");
     const hubNameEl = document.getElementById("centralityHubName");
     const hubCustomEl = document.getElementById("centralityHubCustom");
+    const hubGroupEl = document.getElementById("centralityHubGroup");
+    const userHubGroupEl = document.getElementById("centralityUserHubGroup");
+    const userHubNameEl = document.getElementById("centralityUserHubName");
+    const userHubPillEl = document.getElementById("centralityUserHubPill");
 
     // Populate custom hub dropdown.
     if (hubCustomEl) {
@@ -1024,11 +1717,25 @@ async function main() {
     }
 
     // Resolve preset hub ids.
-    centralityPresetIdByKey = new Map();
-    for (const h of presetHubs) {
-      const id = nearestNeighborhoodId(h.lat, h.lon);
-      if (id) centralityPresetIdByKey.set(h.key, id);
-    }
+    centralityPresetIdByKey = hubPresetIdByKey;
+
+    const updateUserHubChip = (customId) => {
+      if (!userHubGroupEl || !hubGroupEl) return;
+      if (!customId) {
+        userHubGroupEl.hidden = true;
+        return;
+      }
+      const nb = nbById().get(String(customId));
+      const name = displayName(nb?.name || customId);
+      const boro = nb?.borough || "";
+      userHubGroupEl.hidden = false;
+      if (userHubNameEl) userHubNameEl.textContent = name;
+      if (userHubPillEl) {
+        const abbrev = boroughAbbrev(boro) || "U";
+        userHubPillEl.textContent = abbrev;
+        userHubPillEl.className = `boro-pill ${boro ? `boro-${boroughKey(boro)}` : ""}`.trim();
+      }
+    };
 
     const loadUiPrefs = () => {
       const metric = localStorage.getItem("atlas.centralityMetric") || "hub";
@@ -1041,30 +1748,39 @@ async function main() {
 
       const custom = localStorage.getItem("atlas.centralityHubCustom") || "";
       if (hubCustomEl) hubCustomEl.value = custom;
+      updateUserHubChip(custom);
     };
 
     centralityApplyUi = () => {
       const metric = metricRadios.find((r) => r.checked)?.value || "hub";
+      centralityMetricKey = metric;
       if (hubControlsEl) hubControlsEl.hidden = metric !== "hub";
 
       if (metric === "hub") {
-        const presetKey = hubPresetRadios.find((r) => r.checked)?.value || "midtown";
+        let presetKey = hubPresetRadios.find((r) => r.checked)?.value || "midtown";
+        if (presetKey === "user" && !hubCustomEl?.value) presetKey = "midtown";
         const presetMeta = presetHubs.find((h) => h.key === presetKey);
         const presetId = centralityPresetIdByKey.get(presetKey) || null;
         const customId = hubCustomEl?.value ? String(hubCustomEl.value) : "";
-        const useId = customId || presetId || null;
-        const useLabel = customId
+        const useCustom = presetKey === "user" && customId;
+        const useId = useCustom ? customId : presetId || null;
+        const useLabel = useCustom
           ? (nbById().get(customId)?.name || customId)
           : presetMeta?.label || presetKey;
 
+        hubCentralityIsUser = !!useCustom;
         hubCentralityHubId = useId;
         hubCentralityHubLabel = String(useLabel || "");
         if (hubNameEl) hubNameEl.textContent = hubCentralityHubLabel;
+        updateUserHubChip(customId);
         applyHubCentrality();
       } else {
         const metricKey = metric;
         const mm = centralityConfig?.metrics?.[metricKey];
         const scores = Array.isArray(mm?.scores) ? mm.scores : [];
+        hubCentralityIsUser = false;
+        hubCentralityHubId = null;
+        hubCentralityHubLabel = "";
         setCentralityFromScores({
           label: mm?.label || metricKey,
           higherIsBetter: !!mm?.higher_is_better,
@@ -1075,6 +1791,7 @@ async function main() {
       restyle();
       renderLabels();
       renderCentralityPanel();
+      renderSpokesPanel();
     };
 
     loadUiPrefs();
@@ -1096,11 +1813,26 @@ async function main() {
             hubCustomEl.value = "";
             localStorage.setItem("atlas.centralityHubCustom", "");
           }
+          updateUserHubChip("");
           centralityApplyUi();
         });
       }
       hubCustomEl?.addEventListener("change", () => {
-        localStorage.setItem("atlas.centralityHubCustom", hubCustomEl.value || "");
+        const val = hubCustomEl.value || "";
+        localStorage.setItem("atlas.centralityHubCustom", val);
+        if (val) {
+          localStorage.setItem("atlas.centralityHubPreset", "user");
+          const userRadio = hubPresetRadios.find((r) => r.value === "user");
+          if (userRadio) userRadio.checked = true;
+        } else {
+          const current = hubPresetRadios.find((r) => r.checked);
+          if (current?.value === "user") {
+            const fallback = hubPresetRadios.find((r) => r.value === "midtown");
+            if (fallback) fallback.checked = true;
+            localStorage.setItem("atlas.centralityHubPreset", "midtown");
+          }
+        }
+        updateUserHubChip(val);
         centralityApplyUi();
       });
     }
@@ -1191,6 +1923,10 @@ async function main() {
     const hubControlsEl = document.getElementById("livingTeleportControls");
     const hubNameEl = document.getElementById("livingHubName");
     const hubCustomEl = document.getElementById("livingHubCustom");
+    const hubGroupEl = document.getElementById("livingHubGroup");
+    const userHubGroupEl = document.getElementById("livingUserHubGroup");
+    const userHubNameEl = document.getElementById("livingUserHubName");
+    const userHubPillEl = document.getElementById("livingUserHubPill");
     const excludeShortEl = document.getElementById("livingExcludeShort");
     const hasMetricRadios = metricRadios.length > 0;
 
@@ -1226,11 +1962,25 @@ async function main() {
     }
 
     // Resolve preset hub ids.
-    livingPresetIdByKey = new Map();
-    for (const h of presetHubs) {
-      const id = nearestNeighborhoodId(h.lat, h.lon);
-      if (id) livingPresetIdByKey.set(h.key, id);
-    }
+    livingPresetIdByKey = hubPresetIdByKey;
+
+    const updateUserHubChip = (customId) => {
+      if (!userHubGroupEl || !hubGroupEl) return;
+      if (!customId) {
+        userHubGroupEl.hidden = true;
+        return;
+      }
+      const nb = nbById().get(String(customId));
+      const name = displayName(nb?.name || customId);
+      const boro = nb?.borough || "";
+      userHubGroupEl.hidden = false;
+      if (userHubNameEl) userHubNameEl.textContent = name;
+      if (userHubPillEl) {
+        const abbrev = boroughAbbrev(boro) || "U";
+        userHubPillEl.textContent = abbrev;
+        userHubPillEl.className = `boro-pill ${boro ? `boro-${boroughKey(boro)}` : ""}`.trim();
+      }
+    };
 
     const loadUiPrefs = () => {
       if (hasMetricRadios) {
@@ -1245,6 +1995,7 @@ async function main() {
 
       const custom = localStorage.getItem("atlas.livingHubCustom") || "";
       if (hubCustomEl) hubCustomEl.value = custom;
+      updateUserHubChip(custom);
 
       const ex = localStorage.getItem("atlas.livingExcludeShort");
       if (excludeShortEl) excludeShortEl.checked = ex == null ? true : ex === "1";
@@ -1254,15 +2005,18 @@ async function main() {
       livingMetricKey = "teleportness";
       if (hubControlsEl) hubControlsEl.hidden = false;
 
-      const presetKey = hubPresetRadios.find((r) => r.checked)?.value || "midtown";
-      const presetMeta = presetHubs.find((h) => h.key === presetKey);
-      const presetId = livingPresetIdByKey.get(presetKey) || null;
+        let presetKey = hubPresetRadios.find((r) => r.checked)?.value || "midtown";
+        if (presetKey === "user" && !hubCustomEl?.value) presetKey = "midtown";
+        const presetMeta = presetHubs.find((h) => h.key === presetKey);
+        const presetId = livingPresetIdByKey.get(presetKey) || null;
       const customId = hubCustomEl?.value ? String(hubCustomEl.value) : "";
-      const useId = customId || presetId || null;
-      const useLabel = customId
+      const useCustom = presetKey === "user" && customId;
+      const useId = useCustom ? customId : presetId || null;
+      const useLabel = useCustom
         ? (nbById().get(customId)?.name || customId)
         : presetMeta?.label || presetKey;
 
+      livingHubIsUser = !!useCustom;
       livingHubId = useId;
       livingHubLabel = String(useLabel || "");
       if (hubNameEl) hubNameEl.textContent = livingHubLabel;
@@ -1272,6 +2026,7 @@ async function main() {
       restyle();
       renderLabels();
       renderLivingPanel();
+      renderSpokesPanel();
     };
 
     loadUiPrefs();
@@ -1294,12 +2049,27 @@ async function main() {
             hubCustomEl.value = "";
             localStorage.setItem("atlas.livingHubCustom", "");
           }
+          updateUserHubChip("");
           livingApplyUi();
         });
       }
 
       hubCustomEl?.addEventListener("change", () => {
-        localStorage.setItem("atlas.livingHubCustom", hubCustomEl.value || "");
+        const val = hubCustomEl.value || "";
+        localStorage.setItem("atlas.livingHubCustom", val);
+        if (val) {
+          localStorage.setItem("atlas.livingHubPreset", "user");
+          const userRadio = hubPresetRadios.find((r) => r.value === "user");
+          if (userRadio) userRadio.checked = true;
+        } else {
+          const current = hubPresetRadios.find((r) => r.checked);
+          if (current?.value === "user") {
+            const fallback = hubPresetRadios.find((r) => r.value === "midtown");
+            if (fallback) fallback.checked = true;
+            localStorage.setItem("atlas.livingHubPreset", "midtown");
+          }
+        }
+        updateUserHubChip(val);
         livingApplyUi();
       });
 
@@ -1308,6 +2078,56 @@ async function main() {
         livingApplyUi();
       });
     }
+  };
+
+  let cartogramUiBound = false;
+  const setupCartogramUi = () => {
+    if (!mapModeRadios.length) return;
+
+    // Populate scalar dropdown.
+    if (cartogramScalarSelectEl) {
+      cartogramScalarSelectEl.replaceChildren();
+      for (const key of SCALAR_KEYS) {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = SCALAR_REGISTRY[key]?.label || key;
+        cartogramScalarSelectEl.appendChild(opt);
+      }
+      const storedKey = localStorage.getItem("atlas.cartogramScalar") || DEFAULT_SCALAR_KEY;
+      cartogramScalarKey = SCALAR_KEYS.includes(storedKey) ? storedKey : DEFAULT_SCALAR_KEY;
+      cartogramScalarSelectEl.value = cartogramScalarKey;
+    }
+
+    const applyMapModeUi = (preserveState = true) => {
+      const mode = getMapMode();
+      if (cartogramScalarWrapEl) cartogramScalarWrapEl.hidden = mode !== "cartogram";
+      if (cartogramLegendNoteEl) cartogramLegendNoteEl.hidden = mode !== "cartogram";
+      if (mode === "cartogram") {
+        ensureCartogram();
+      }
+      render({ preserveState });
+    };
+
+    applyMapModeUi(false);
+
+    if (cartogramUiBound) return;
+    cartogramUiBound = true;
+
+    for (const r of mapModeRadios) {
+      r.addEventListener("change", () => {
+        savePrefs();
+        applyMapModeUi(true);
+      });
+    }
+
+    cartogramScalarSelectEl?.addEventListener("change", () => {
+      const val = cartogramScalarSelectEl.value;
+      cartogramScalarKey = SCALAR_KEYS.includes(val) ? val : DEFAULT_SCALAR_KEY;
+      localStorage.setItem("atlas.cartogramScalar", cartogramScalarKey);
+      cartogramCacheKey = null;
+      ensureCartogram();
+      render({ preserveState: true });
+    });
   };
 
   const boroughStrokeForId = (id) => {
@@ -1325,6 +2145,19 @@ async function main() {
     if (!centralityHigherIsBetter) return `${Math.round(raw)} min`;
     // Harmonic-like scores: keep compact.
     return raw.toFixed(3);
+  };
+
+  const getActiveHubInfo = () => {
+    const mode = getViewMode();
+    if (mode === "living") {
+      if (!livingHubId) return null;
+      return { id: String(livingHubId), label: livingHubLabel || "", isUser: !!livingHubIsUser };
+    }
+    if (mode === "centrality" && centralityMetricKey === "hub") {
+      if (!hubCentralityHubId) return null;
+      return { id: String(hubCentralityHubId), label: hubCentralityHubLabel || "", isUser: !!hubCentralityIsUser };
+    }
+    return null;
   };
 
   const minsFromOriginToId = (id) => {
@@ -1346,6 +2179,64 @@ async function main() {
     return routes?.[routeIdx] || null;
   };
 
+  let hubSpokeCache = new Map();
+  const getHubSpokeData = (hubId) => {
+    if (!hubId || !minutesMatrix) return [];
+    const key = `${getProfile()}|${hubId}|${getMaxMinutes()}`;
+    if (hubSpokeCache.has(key)) return hubSpokeCache.get(key) || [];
+
+    const hubIdx = indexById().get(String(hubId));
+    const hubNb = nbById().get(String(hubId));
+    const hubC = hubNb?.centroid;
+    if (hubIdx == null || !Array.isArray(hubC) || hubC.length < 2) return [];
+
+    const maxMinutes = getMaxMinutes();
+    const out = [];
+    for (let i = 0; i < neighborhoods.length; i++) {
+      if (i === hubIdx) continue;
+      const n = neighborhoods[i];
+      const id = String(n.id);
+      const mins = minutesMatrix?.[i]?.[hubIdx] ?? null;
+      if (mins == null || !Number.isFinite(mins) || mins <= 0 || mins > maxMinutes) continue;
+      const c = n?.centroid;
+      if (!Array.isArray(c) || c.length < 2) continue;
+      const distKm = haversineKm(c, hubC);
+      const expected = Number.isFinite(distKm) ? distKm / TELEPORT_EXPECTED_SPEED_KM_PER_MIN : null;
+      const minutesSaved = expected != null ? expected - mins : null;
+      const ridx = firstRouteMatrix?.[i]?.[hubIdx] ?? null;
+      const route = ridx != null ? matrixRoutes?.[ridx] || routes?.[ridx] : null;
+      const line = route?.short_name || route?.id || null;
+      out.push({
+        id,
+        name: n.name || id,
+        minutes: mins,
+        distanceKm: distKm,
+        minutesSaved,
+        line,
+        borough: n?.borough || "",
+      });
+    }
+    hubSpokeCache.set(key, out);
+    return out;
+  };
+
+  const getOriginSpokeIds = (count = SPOKE_LABEL_COUNT) => {
+    if (!originId || !lastRun) return [];
+    const maxMinutes = getMaxMinutes();
+    const rows = neighborhoods
+      .map((n) => ({ id: String(n.id), minutes: minsFromOriginToId(n.id) }))
+      .filter(
+        (r) =>
+          r.id !== String(originId) &&
+          r.minutes != null &&
+          Number.isFinite(r.minutes) &&
+          r.minutes <= maxMinutes,
+      )
+      .sort((a, b) => a.minutes - b.minutes)
+      .slice(0, count);
+    return rows.map((r) => r.id);
+  };
+
   const stopProjected = (stopIndex) => {
     const st = stops[stopIndex];
     return projectLonLat([st.lon, st.lat]);
@@ -1360,7 +2251,7 @@ async function main() {
     svgIndex.gIsochrones.replaceChildren();
     if (!ISOCHRONES_ALWAYS_ON) return;
     if (!originId || !lastRun) return;
-    if ((viewModeEl?.value || "time") !== "time") return;
+    if (getViewMode() !== "time") return;
 
     const maxMinutes = getMaxMinutes();
     const thresholds = ISOCHRONE_MINUTES.filter((t) => t <= maxMinutes);
@@ -1402,7 +2293,7 @@ async function main() {
     if (!svgIndex?.gLivingNodes) return;
     const g = svgIndex.gLivingNodes;
     g.replaceChildren();
-    if ((viewModeEl?.value || "time") !== "living") return;
+    if (getViewMode() !== "living") return;
 
     const rgb = LIVING_COLORS[livingColorKey] || LIVING_COLORS.teleportness;
     const denom = livingStats.max - livingStats.min;
@@ -1437,25 +2328,111 @@ async function main() {
       frag.appendChild(dot);
     }
 
-    // Hub marker for teleportness.
-    if (livingMetricKey === "teleportness" && livingHubId) {
-      const hubNb = nbById().get(String(livingHubId));
-      const c = hubNb?.centroid;
-      if (Array.isArray(c) && c.length >= 2) {
-        const [x, y] = projectLonLat([Number(c[1]), Number(c[0])]);
-        const hub = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        hub.setAttribute("cx", String(x));
-        hub.setAttribute("cy", String(y));
-        hub.setAttribute("r", String(r0 + r1 * 0.9));
-        hub.setAttribute("fill", "rgba(255,255,255,0.96)");
-        hub.setAttribute("stroke", "rgba(2,6,23,0.85)");
-        hub.setAttribute("stroke-width", "1.6");
-        hub.setAttribute("vector-effect", "non-scaling-stroke");
-        frag.appendChild(hub);
-      }
+    g.appendChild(frag);
+  };
+
+  const hubPositionForId = (id) => {
+    const mapMode = getMapMode();
+    if (mapMode === "cartogram") {
+      const node = cartogramNodesById.get(String(id));
+      if (node) return { x: node.x, y: node.y };
+    }
+    const nb = nbById().get(String(id));
+    const c = nb?.centroid;
+    if (!Array.isArray(c) || c.length < 2) return null;
+    const [x, y] = projectLonLat([Number(c[1]), Number(c[0])]);
+    return { x, y };
+  };
+
+  const renderHubMarkers = () => {
+    if (!svgIndex?.gHubMarkers || !svgIndex?.gHubHalos) return;
+    const mode = getViewMode();
+    if (mode === "centrality" && centralityMetricKey !== "hub") {
+      svgIndex.gHubMarkers.replaceChildren();
+      svgIndex.gHubHalos.replaceChildren();
+      return;
+    }
+    const gMarkers = svgIndex.gHubMarkers;
+    const gHalos = svgIndex.gHubHalos;
+    gMarkers.replaceChildren();
+    gHalos.replaceChildren();
+
+    const hubAllowed = !(mode === "centrality" && centralityMetricKey !== "hub");
+    const activeHub = hubAllowed ? getActiveHubInfo() : null;
+    const activeHubId = activeHub?.id ? String(activeHub.id) : null;
+    const hasActiveHub = !!activeHubId;
+    const showHalos = showHubHalos();
+    const minDim = baseViewBox ? Math.min(baseViewBox.w, baseViewBox.h) : 0.01;
+    const ringR = minDim * 0.018;
+    const coreR = ringR * 0.45;
+    const haloRActive = minDim * 0.18;
+    const haloRIdle = minDim * 0.12;
+
+    const hubs = [];
+    for (const [id, hub] of hubPresetById.entries()) {
+      hubs.push({
+        id,
+        label: hub.label,
+        boro: hub.boro || "",
+        isActive: activeHubId != null && String(id) === String(activeHubId),
+        isUser: false,
+      });
+    }
+    if (activeHubId && !hubPresetById.has(String(activeHubId))) {
+      const nb = nbById().get(String(activeHubId));
+      hubs.push({
+        id: String(activeHubId),
+        label: activeHub?.label || (nb?.name || activeHubId),
+        boro: nb?.borough || "",
+        isActive: true,
+        isUser: true,
+      });
     }
 
-    g.appendChild(frag);
+    const haloFrag = document.createDocumentFragment();
+    const markerFrag = document.createDocumentFragment();
+
+    for (const hub of hubs) {
+      const pos = hubPositionForId(hub.id);
+      if (!pos) continue;
+      const boroKeyValue = boroughKey(hub.boro);
+      const ringColor = hubColor(boroKeyValue, hub.isActive ? 0.9 : 0.6);
+
+      if (showHalos) {
+        const drawHalo = hub.isActive || !hasActiveHub;
+        if (drawHalo) {
+          const halo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          halo.setAttribute("cx", String(pos.x));
+          halo.setAttribute("cy", String(pos.y));
+          halo.setAttribute("r", String(hub.isActive ? haloRActive : haloRIdle));
+          halo.setAttribute("fill", hubColor(boroKeyValue, hub.isActive ? 0.12 : 0.05));
+          halo.setAttribute("class", "hub-halo");
+          haloFrag.appendChild(halo);
+        }
+      }
+
+      const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      ring.setAttribute("cx", String(pos.x));
+      ring.setAttribute("cy", String(pos.y));
+      ring.setAttribute("r", String(ringR * (hub.isActive ? 1.15 : 1)));
+      ring.setAttribute("fill", "rgba(255,255,255,0.96)");
+      ring.setAttribute("stroke", ringColor);
+      ring.setAttribute("stroke-width", hub.isActive ? "2.2" : "1.5");
+      ring.setAttribute("vector-effect", "non-scaling-stroke");
+      ring.setAttribute("class", "hub-marker-ring");
+      markerFrag.appendChild(ring);
+
+      const core = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      core.setAttribute("cx", String(pos.x));
+      core.setAttribute("cy", String(pos.y));
+      core.setAttribute("r", String(coreR * (hub.isActive ? 1.1 : 1)));
+      core.setAttribute("fill", ringColor);
+      core.setAttribute("class", "hub-marker-core");
+      markerFrag.appendChild(core);
+    }
+
+    gHalos.appendChild(haloFrag);
+    gMarkers.appendChild(markerFrag);
   };
 
   const drawStopDots = ({ stopIndices, hueByLine, maxMinutes }) => {
@@ -1634,13 +2611,18 @@ async function main() {
 
   const restyle = () => {
     if (!svgIndex) return;
-    const mode = viewModeEl?.value || "time";
+    const mode = getViewMode();
+    const mapMode = getMapMode();
+    const isDerived = getBaseUnit() === "derived";
     const origin = originId;
     const activeDestId = pinnedDestId != null ? pinnedDestId : hoveredDestId;
     const maxMinutes = getMaxMinutes();
     const hueByLine = HUE_BY_LINE_ALWAYS_ON;
     const hasOrigin = originId != null && lastRun != null;
     const livingRgb = LIVING_COLORS[livingColorKey] || LIVING_COLORS.teleportness;
+    const showBase = mode === "time" && !hasOrigin;
+    const baseFill = "rgba(15,23,42,0.14)";
+    const baseStroke = "rgba(15,23,42,0.48)";
 
     for (const [id, path] of svgIndex.pathById.entries()) {
       const mins = minsFromOriginToId(id);
@@ -1651,11 +2633,13 @@ async function main() {
           ? centralityToFill(score, centralityStats.min, centralityStats.max)
           : mode === "living"
             ? livingToFill(livingScore, livingStats.min, livingStats.max, livingRgb)
-          : !hasOrigin
-            ? { fill: "rgba(0,0,0,0)", fillOpacity: 1 }
-            : hueByLine
-              ? minutesToFillHue(mins, maxMinutes, firstRouteForId(id)?.color)
-              : minutesToFill(mins, maxMinutes);
+            : !hasOrigin
+              ? showBase
+                ? { fill: baseFill, fillOpacity: 1 }
+                : { fill: "rgba(0,0,0,0)", fillOpacity: 1 }
+              : hueByLine
+                ? minutesToFillHue(mins, maxMinutes, firstRouteForId(id)?.color)
+                : minutesToFill(mins, maxMinutes);
       const isOrigin = origin != null && String(origin) === String(id);
       const isHub =
         mode === "living" &&
@@ -1674,11 +2658,31 @@ async function main() {
             ? "rgba(2,6,23,0.85)"
             : isDest
               ? "rgba(2,6,23,0.85)"
-              : boroughStrokeForId(id),
+              : showBase
+                ? baseStroke
+                : boroughStrokeForId(id),
       );
-      path.setAttribute("stroke-opacity", isOrigin || isDest || isHub ? "1" : "0.85");
-      path.setAttribute("stroke-width", isOrigin || isDest || isHub ? "2" : "1.2");
+      path.setAttribute(
+        "stroke-opacity",
+        isOrigin || isDest || isHub ? "1" : showBase ? "0.9" : isDerived ? "0.35" : "0.85",
+      );
+      path.setAttribute("stroke-width", isOrigin || isDest || isHub ? "2" : isDerived ? "0.7" : "1.2");
+
+      if (mapMode === "cartogram") {
+        const node = cartogramNodesById.get(String(id));
+        const scale = cartogramScaleById.get(String(id)) || 1;
+        if (node && Number.isFinite(scale)) {
+          path.setAttribute(
+            "transform",
+            `translate(${node.x} ${node.y}) scale(${scale}) translate(${-node.x} ${-node.y})`,
+          );
+        }
+      } else {
+        path.removeAttribute("transform");
+      }
     }
+
+    renderHubMarkers();
 
     if (mode === "centrality") {
       clearOverlay();
@@ -1692,6 +2696,12 @@ async function main() {
       renderLivingNodes();
       return;
     }
+    if (mapMode === "cartogram") {
+      clearOverlay();
+      clearIsochrones();
+      clearLivingNodes();
+      return;
+    }
     clearLivingNodes();
     renderIsochrones();
     if (destStopIndex != null) drawRouteToDest();
@@ -1702,7 +2712,7 @@ async function main() {
   const onClickFeature = (id, event = null) => {
     const nb = nbById().get(String(id));
     if (!nb) return;
-    const mode = viewModeEl?.value || "time";
+    const mode = getViewMode();
     if (mode === "centrality") return;
 
     if (mode === "living") {
@@ -1751,16 +2761,34 @@ async function main() {
     updateListsAndDirections();
   };
 
+  const showCentralityHover = (id) => {
+    const nb = nbById().get(String(id));
+    const destNameEl = document.getElementById("destName");
+    const routeSummaryEl = document.getElementById("routeSummary");
+    const routeStepsEl = document.getElementById("routeSteps");
+    renderNameWithBorough(destNameEl, displayName(nb?.name || String(id)), nb?.borough, nb?.name_confidence);
+    routeSummaryEl.textContent = `${centralityLabel}: ${formatCentralityValue(id)}`;
+    setList(routeStepsEl, []);
+    updateCartogramScalar(id);
+  };
+
+  const resetCentralityHover = () => {
+    const destNameEl = document.getElementById("destName");
+    const routeSummaryEl = document.getElementById("routeSummary");
+    const routeStepsEl = document.getElementById("routeSteps");
+    destNameEl.replaceChildren(document.createTextNode("Hover a neighborhood"));
+    routeSummaryEl.textContent = "";
+    setList(routeStepsEl, []);
+    updateCartogramScalar(null);
+  };
+
   onClickFeature.onHover = (id) => {
-    const mode = viewModeEl?.value || "time";
+    const mode = getViewMode();
     if (mode === "centrality") {
-      const nb = nbById().get(String(id));
-      const destNameEl = document.getElementById("destName");
-      const routeSummaryEl = document.getElementById("routeSummary");
-      const routeStepsEl = document.getElementById("routeSteps");
-      renderNameWithBorough(destNameEl, displayName(nb?.name || String(id)), nb?.borough);
-      routeSummaryEl.textContent = `${centralityLabel}: ${formatCentralityValue(id)}`;
-      setList(routeStepsEl, []);
+      hoveredDestId = String(id);
+      showCentralityHover(id);
+      restyle();
+      renderLabels();
       return;
     }
     if (mode === "living") {
@@ -1782,14 +2810,19 @@ async function main() {
   };
 
   onClickFeature.onHoverEnd = (id) => {
-    const mode = viewModeEl?.value || "time";
+    const mode = getViewMode();
     if (mode === "centrality") {
-      const destNameEl = document.getElementById("destName");
-      const routeSummaryEl = document.getElementById("routeSummary");
-      const routeStepsEl = document.getElementById("routeSteps");
-      destNameEl.replaceChildren(document.createTextNode("Hover a neighborhood"));
-      routeSummaryEl.textContent = "";
-      setList(routeStepsEl, []);
+      if (pinnedDestId) {
+        hoveredDestId = String(pinnedDestId);
+        showCentralityHover(pinnedDestId);
+        restyle();
+        renderLabels();
+        return;
+      }
+      hoveredDestId = null;
+      resetCentralityHover();
+      restyle();
+      renderLabels();
       return;
     }
     if (mode === "living") {
@@ -1810,19 +2843,51 @@ async function main() {
     updateListsAndDirections();
   };
 
-  const render = () => {
-    svgIndex = renderGeojson(svg, visibleGeo, onClickFeature);
-    initialViewBox = svgIndex?.initialViewBox ? { ...svgIndex.initialViewBox } : null;
+  const render = ({ preserveState = false } = {}) => {
+    const mapMode = getMapMode();
+    const baseUnit = getBaseUnit();
+    const isDerived = baseUnit === "derived";
+    if (mapMode === "cartogram") {
+      ensureCartogram();
+      const titleFn = (feature, props) => {
+        const id = String(props?.atlas_id || "");
+        const nb = nbById().get(String(id));
+        const name = nb?.name || props?.name || id;
+        const val = getScalarValueById(id, cartogramScalarKey);
+        const label = SCALAR_REGISTRY[cartogramScalarKey]?.label || cartogramScalarKey;
+        return val != null ? `${name}\n${label}: ${formatScalarValue(cartogramScalarKey, val)}` : String(name);
+      };
+      const outlineGeo = isDerived ? { type: "FeatureCollection", features: (tractsGeo?.features || []).filter((f) => isTriBorough(getBorough(f?.properties || {}))) } : null;
+      svgIndex = renderGeojson(svg, visibleGeo, onClickFeature, {
+        viewBox: baseViewBox,
+        titleFn,
+        outlineGeo,
+        outlineStyle: { stroke: "rgba(15,23,42,0.55)", strokeWidth: 2.0, opacity: 0.9 },
+      });
+    } else {
+      const outlineGeo = isDerived ? { type: "FeatureCollection", features: (tractsGeo?.features || []).filter((f) => isTriBorough(getBorough(f?.properties || {}))) } : null;
+      svgIndex = renderGeojson(svg, visibleGeo, onClickFeature, {
+        viewBox: baseViewBox,
+        outlineGeo,
+        outlineStyle: { stroke: "rgba(15,23,42,0.55)", strokeWidth: 2.0, opacity: 0.9 },
+      });
+    }
+
+    initialViewBox = baseViewBox ? { ...baseViewBox } : svgIndex?.initialViewBox ? { ...svgIndex.initialViewBox } : null;
     if (initialViewBox) {
       svg.__atlasInitialViewBox = { ...initialViewBox };
       setSvgViewBox(svg, { ...initialViewBox });
     }
-    originId = null;
-    hoveredDestId = null;
-    pinnedDestId = null;
-    originStopIndex = null;
-    destStopIndex = null;
-    lastRun = null;
+
+    if (!preserveState) {
+      originId = null;
+      hoveredDestId = null;
+      pinnedDestId = null;
+      originStopIndex = null;
+      destStopIndex = null;
+      lastRun = null;
+    }
+
     restyle();
     updateListsAndDirections();
     setStatus(`${svgIndex.pathById.size} nabes loaded.`);
@@ -1835,6 +2900,7 @@ async function main() {
     labelRailRightEl.replaceChildren();
     leadersSvg.replaceChildren();
 
+    const mode = getViewMode();
     const vb = readViewBox(svg);
     if (!vb) return;
     const rect = svg.getBoundingClientRect();
@@ -1846,17 +2912,35 @@ async function main() {
     });
 
     const hasOrigin = originId != null && lastRun != null;
-    const maxMinutes = getMaxMinutes();
-    const mode = viewModeEl?.value || "time";
+    const mapMode = getMapMode();
 
     const candidates = [];
+    const nameOverrideById = new Map();
+    for (const feat of visibleGeo?.features || []) {
+      const props = feat?.properties || {};
+      const id = String(props.atlas_id || "");
+      if (!id) continue;
+      const nm = featureName(props);
+      if (nm) nameOverrideById.set(id, nm);
+    }
     for (const n of neighborhoods) {
       const c = n?.centroid;
-      const name = n?.name;
+      const name = nameOverrideById.get(String(n?.id)) || n?.name;
       if (!c || !name) continue;
       const [lat, lon] = c;
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-      const [x, y] = projectLonLat([lon, lat]);
+      let x;
+      let y;
+      if (mapMode === "cartogram") {
+        const node = cartogramNodesById.get(String(n.id));
+        if (node) {
+          x = node.x;
+          y = node.y;
+        }
+      }
+      if (x == null || y == null) {
+        [x, y] = projectLonLat([lon, lat]);
+      }
       if (x < vb.x - vb.w * 0.05 || x > vb.x + vb.w * 1.05) continue;
       if (y < vb.y - vb.h * 0.05 || y > vb.y + vb.h * 1.05) continue;
 
@@ -1878,63 +2962,67 @@ async function main() {
       });
     }
 
-    // Choose labels: teleports by default when an origin is selected.
-    let chosen = [];
-    if (hasOrigin) {
-      const originNb = nbById().get(String(originId));
-      const oc = originNb?.centroid;
-      const originCandidate = candidates.find((c) => c.id === String(originId));
+    const candidateById = new Map(candidates.map((c) => [String(c.id), c]));
+    const labelTargets = new Map();
+    const hubAllowed = !(mode === "centrality" && centralityMetricKey !== "hub");
+    const activeHub = hubAllowed ? getActiveHubInfo() : null;
+    const activeHubId = activeHub?.id ? String(activeHub.id) : null;
+    const allowSpokes = showSpokeLabels();
 
-      const reachable = candidates.filter(
-        (c) => c.id !== String(originId) && c.mins != null && c.mins <= maxMinutes && oc && c.centroid,
-      );
+    const addLabel = (id, priority, meta = {}) => {
+      if (!id) return;
+      const key = String(id);
+      const c = candidateById.get(key);
+      if (!c) return;
+      const existing = labelTargets.get(key);
+      const isHub = (meta.isHub ?? hubPresetById.has(key)) || key === activeHubId;
+      const entry = { ...c, priority, isHub, isActiveHub: meta.isActiveHub || false, isSpoke: meta.isSpoke || false };
+      if (!existing || priority > existing.priority) labelTargets.set(key, entry);
+    };
 
-      const byTime = reachable.slice().sort((a, b) => a.mins - b.mins);
-      const timeRank = new Map(byTime.map((c, i) => [c.id, i + 1]));
+    if (hoveredDestId) addLabel(hoveredDestId, 120);
+    if (hoveredRailId) addLabel(hoveredRailId, 118);
+    if (pinnedDestId) addLabel(pinnedDestId, 110);
+    if (originId) addLabel(originId, 105);
+    if (activeHubId) addLabel(activeHubId, 100, { isHub: true, isActiveHub: true });
 
-      const withDist = reachable
-        .map((c) => ({ ...c, distKm: haversineKm(oc, c.centroid) }))
-        .sort((a, b) => b.distKm - a.distKm);
-      const distRank = new Map(withDist.map((c, i) => [c.id, i + 1]));
-
-      const teleports = withDist
-        .map((c) => ({
-          ...c,
-          teleport: (distRank.get(c.id) || 0) - (timeRank.get(c.id) || 0),
-        }))
-        .sort((a, b) => b.teleport - a.teleport);
-
-      if (originCandidate) chosen.push(originCandidate);
-      chosen.push(...teleports.slice(0, 23));
-
-      // Backfill with closest-by-time if we don't have enough.
-      if (chosen.length < 24) {
-        const have = new Set(chosen.map((c) => c.id));
-        for (const c of byTime) {
-          if (chosen.length >= 24) break;
-          if (have.has(c.id)) continue;
-          chosen.push(c);
-          have.add(c.id);
-        }
+    if (allowSpokes && hubAllowed) {
+      if (activeHubId) {
+        const spokes = getHubSpokeData(activeHubId)
+          .slice()
+          .sort((a, b) => a.minutes - b.minutes)
+          .slice(0, SPOKE_LABEL_COUNT);
+        spokes.forEach((s, idx) => addLabel(s.id, 80 - idx, { isSpoke: true }));
+      } else if (hasOrigin) {
+        const ids = getOriginSpokeIds(SPOKE_LABEL_COUNT);
+        ids.forEach((sid, idx) => addLabel(sid, 75 - idx, { isSpoke: true }));
       }
-    } else {
-      const key = mode === "living" ? "living" : "centrality";
-      chosen = candidates
-        .slice()
-        .sort((a, b) => (b[key] || 0) - (a[key] || 0))
-        .slice(0, 24);
     }
+
+    let chosen = Array.from(labelTargets.values());
+    chosen.sort((a, b) => b.priority - a.priority);
+    if (chosen.length > LABEL_BUDGET) chosen = chosen.slice(0, LABEL_BUDGET);
 
     const left = [];
     const right = [];
     for (const c of chosen) (c.sx < rect.width * 0.5 ? left : right).push(c);
+
+    if (!chosen.length) {
+      labelRailLeftEl.style.display = "none";
+      labelRailRightEl.style.display = "none";
+      leadersSvg.replaceChildren();
+      return;
+    }
+
+    labelRailLeftEl.style.display = "";
+    labelRailRightEl.style.display = "";
 
     const railWidth = 220;
     const padTop = 10;
     const padBottom = 10;
     const usableH = Math.max(0, rect.height - padTop - padBottom);
     const minGap = 16;
-    const maxPerSide = 12;
+    const maxPerSide = LABEL_BUDGET;
 
     const place = (items) => {
       const pts = items
@@ -1959,13 +3047,15 @@ async function main() {
     const rightPlaced = rightPlacedAll.slice(0, maxPerSide);
     const leftHidden = Math.max(0, leftPlacedAll.length - leftPlaced.length);
     const rightHidden = Math.max(0, rightPlacedAll.length - rightPlaced.length);
-    const activeId = hoveredRailId || hoveredDestId || null;
+    const activeId = hoveredRailId || hoveredDestId || pinnedDestId || null;
 
     const mkLabel = (c, yPx) => {
       const d = document.createElement("div");
       d.className = "rail-label";
       d.style.top = `${Math.round(yPx - 8)}px`;
       d.textContent = displayName(c.name);
+      if (c.isHub) d.classList.add("is-hub");
+      if (c.isActiveHub) d.classList.add("is-active-hub");
       if (activeId && String(activeId) === String(c.id)) d.classList.add("is-active");
       d.addEventListener("mouseenter", () => {
         hoveredRailId = c.id;
@@ -2003,6 +3093,7 @@ async function main() {
     if (pinnedDestId) activeLeaderIds.add(String(pinnedDestId));
     if (hoveredRailId) activeLeaderIds.add(String(hoveredRailId));
     if (hoveredDestId) activeLeaderIds.add(String(hoveredDestId));
+    if (activeHubId && labelTargets.has(String(activeHubId))) activeLeaderIds.add(String(activeHubId));
     if (!activeLeaderIds.size) return;
 
     const byId = new Map();
@@ -2051,7 +3142,7 @@ async function main() {
 
   const renderLivingPanel = () => {
     if (!isLivingPage) return;
-    const mode = viewModeEl?.value || "time";
+    const mode = getViewMode();
     if (mode !== "living") return;
 
     const hintEl = document.getElementById("livingMetricHint");
@@ -2107,11 +3198,13 @@ async function main() {
       hoverNameEl.replaceChildren(document.createTextNode("Hover a neighborhood"));
       hoverMetaEl.textContent = "";
       hoverExtraEl.textContent = "";
+      updateCartogramScalar(null);
+      renderSpokesPanel();
       return;
     }
 
     const nb = nbById().get(String(activeId));
-    renderNameWithBorough(hoverNameEl, displayName(nb?.name || activeId), nb?.borough);
+    renderNameWithBorough(hoverNameEl, displayName(nb?.name || activeId), nb?.borough, nb?.name_confidence);
 
     const d = livingDetailsById.get(String(activeId)) || null;
     if (!d) {
@@ -2123,6 +3216,99 @@ async function main() {
     const line = d.first_line ? ` · ${d.first_line}` : "";
     hoverMetaEl.textContent = `${d.minutes} min · ${d.distance_km} km · ${formatSignedMinutes(d.minutes_saved)} saved${line}`;
     hoverExtraEl.textContent = `expected ${d.expected_minutes} min`;
+    updateCartogramScalar(activeId);
+    renderSpokesPanel();
+  };
+
+  const renderSpokeList = (el, items, formatFn) => {
+    if (!el) return;
+    el.replaceChildren();
+    const mode = getViewMode();
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.className = "spoke-item";
+      li.textContent = formatFn(item);
+      if (pinnedDestId && String(pinnedDestId) === String(item.id)) li.classList.add("is-pinned");
+
+      li.addEventListener("mouseenter", () => {
+        onClickFeature.onHover?.(item.id);
+      });
+      li.addEventListener("mouseleave", () => {
+        onClickFeature.onHoverEnd?.(item.id);
+      });
+      li.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (mode === "living") {
+          onClickFeature(item.id);
+          return;
+        }
+        if (mode === "centrality") {
+          const clicked = String(item.id);
+          pinnedDestId = pinnedDestId === clicked ? null : clicked;
+          hoveredDestId = null;
+          if (pinnedDestId) {
+            onClickFeature.onHover?.(pinnedDestId);
+          } else {
+            onClickFeature.onHoverEnd?.(clicked);
+          }
+          restyle();
+          renderLabels();
+        }
+      });
+
+      el.appendChild(li);
+    }
+  };
+
+  const renderSpokesPanel = () => {
+    const panelEl = document.getElementById("spokesPanel");
+    const hubLabelEl = document.getElementById("spokesHubLabel");
+    const closestEl = document.getElementById("spokesClosest");
+    const teleportEl = document.getElementById("spokesTeleport");
+    if (!panelEl || !closestEl || !teleportEl) return;
+
+    const mode = getViewMode();
+    const activeHub = getActiveHubInfo();
+    if (!activeHub || (mode === "centrality" && centralityMetricKey !== "hub")) {
+      panelEl.hidden = true;
+      return;
+    }
+
+    const hubId = String(activeHub.id);
+    let data = getHubSpokeData(hubId);
+    if (mode === "living" && livingExcludeShortTrips) {
+      data = data.filter((d) => d.distanceKm != null && d.distanceKm >= 6);
+    }
+    if (!data.length) {
+      panelEl.hidden = true;
+      return;
+    }
+
+    panelEl.hidden = false;
+    if (hubLabelEl) hubLabelEl.textContent = activeHub.label || "Hub";
+
+    const closest = data
+      .slice()
+      .sort((a, b) => a.minutes - b.minutes)
+      .slice(0, 10);
+
+    const teleporty = data
+      .filter((d) => d.minutesSaved != null && Number.isFinite(d.minutesSaved))
+      .sort((a, b) => b.minutesSaved - a.minutesSaved)
+      .slice(0, 8);
+
+    renderSpokeList(closestEl, closest, (d) => {
+      const line = d.line ? ` · ${d.line}` : "";
+      const name = displayName(d.name || d.id);
+      return `${name} — ${Math.round(d.minutes)} min${line}`;
+    });
+
+    renderSpokeList(teleportEl, teleporty, (d) => {
+      const line = d.line ? ` · ${d.line}` : "";
+      const name = displayName(d.name || d.id);
+      const saved = formatSignedMinutes(Number(d.minutesSaved));
+      return `${name} — ${saved} saved · ${Math.round(d.minutes)} min${line}`;
+    });
   };
 
   const renderCentralityPanel = () => {
@@ -2131,9 +3317,13 @@ async function main() {
     const botEl = document.getElementById("centralBottom");
     if (!panel || !topEl || !botEl) return;
 
-    const mode = viewModeEl?.value || "time";
+    const mode = getViewMode();
     panel.hidden = mode !== "centrality";
-    if (mode !== "centrality") return;
+    if (mode !== "centrality") {
+      renderSpokesPanel();
+      return;
+    }
+    updateCartogramScalar(null);
 
     const rows = neighborhoods
       .map((n) => ({
@@ -2148,10 +3338,11 @@ async function main() {
     const fmt = (r) => `${r.name} — ${formatCentralityValue(r.id)}`;
     setList(topEl, rows.slice(0, 10).map(fmt));
     setList(botEl, rows.slice(-10).reverse().map(fmt));
+    renderSpokesPanel();
   };
 
   const updateListsAndDirections = () => {
-    const mode = viewModeEl?.value || "time";
+    const mode = getViewMode();
     if (mode === "centrality") {
       renderCentralityPanel();
       return;
@@ -2162,6 +3353,7 @@ async function main() {
     }
     if (!originId || !lastRun) {
       updatePanel({ originIndex: null, neighborhoods: [], minutesRow: [], routeRow: [], routes: [], nameFn: displayName });
+      updateCartogramScalar(null);
       return;
     }
 
@@ -2185,11 +3377,17 @@ async function main() {
       destNameEl.replaceChildren(document.createTextNode("Hover a neighborhood"));
       routeSummaryEl.textContent = "";
       setList(routeStepsEl, []);
+      updateCartogramScalar(originId);
       return;
     }
 
     const destNb = nbById().get(String(activeDestId));
-    renderNameWithBorough(destNameEl, displayName(destNb?.name || activeDestId), destNb?.borough);
+    renderNameWithBorough(
+      destNameEl,
+      displayName(destNb?.name || activeDestId),
+      destNb?.borough,
+      destNb?.name_confidence,
+    );
 
     const destMinutes = minsFromOriginToId(activeDestId);
     if (destMinutes == null) {
@@ -2232,32 +3430,92 @@ async function main() {
       steps.push(`${s.line}: ${fromName} → ${toName}`);
     }
     setList(routeStepsEl, steps.slice(0, 8));
+    updateCartogramScalar(activeDestId);
   };
 
   const init = async () => {
-    await loadMatrix(getProfile());
-    render();
-    setupCentralityUi();
-    setupLivingUi();
+    clearError();
+    try {
+      tractsGeo = await fetchJson(`${DATA_DIR}/neighborhoods.geojson`);
+      tractsScalars = await attachScalars(tractsGeo?.features || []);
+      if (baseUnitRadios.length) {
+        const derivedRadio = baseUnitRadios.find((r) => r.value === "derived");
+        if (derivedRadio) {
+          const ok = await checkDerivedAvailable();
+          derivedRadio.disabled = !ok;
+          if (!ok && derivedRadio.checked) {
+            const fallback = baseUnitRadios.find((r) => r.value === "tract");
+            if (fallback) fallback.checked = true;
+            localStorage.setItem("atlas.baseUnit", "tract");
+            showError("Derived data missing. Run ./buildonly.sh to generate derived files.");
+          }
+        }
+      }
+      await applyBaseUnit();
+      await loadMatrix(getProfile());
+      render();
+      setupCentralityUi();
+      setupLivingUi();
+      setupCartogramUi();
+    } catch (err) {
+      setStatus("Error loading data");
+      showError(err?.message || "Failed to load map data. Run ./buildonly.sh and refresh.");
+    }
   };
 
   for (const r of profileRadios) {
     r.addEventListener("change", async () => {
       savePrefs();
-      await loadMatrix(getProfile());
-      render();
-      setupCentralityUi();
-      setupLivingUi();
+      clearError();
+      try {
+        await applyBaseUnit();
+        await loadMatrix(getProfile());
+        render();
+        setupCentralityUi();
+        setupLivingUi();
+        setupCartogramUi();
+      } catch (err) {
+        setStatus("Error loading data");
+        showError(err?.message || "Failed to load map data. Run ./buildonly.sh and refresh.");
+      }
     });
   }
 
   maxMinutesEl.addEventListener("input", () => {
     syncMaxLabel();
-    if ((viewModeEl?.value || "time") === "living") applyLivingMetric();
+    if (getViewMode() === "living") applyLivingMetric();
     restyle();
-    if ((viewModeEl?.value || "time") === "living") renderLabels();
+    if (getViewMode() === "living") renderLabels();
     updateListsAndDirections();
   });
+
+  showHubHalosEl?.addEventListener("change", () => {
+    savePrefs();
+    renderHubMarkers();
+  });
+
+  showSpokeLabelsEl?.addEventListener("change", () => {
+    savePrefs();
+    renderLabels();
+  });
+
+  for (const r of baseUnitRadios) {
+    r.addEventListener("change", async () => {
+      savePrefs();
+      clearError();
+      try {
+        await applyBaseUnit();
+        await loadMatrix(getProfile());
+        render();
+        setupCentralityUi();
+        setupLivingUi();
+        setupCartogramUi();
+      } catch (err) {
+        setStatus("Error loading data");
+        showError(err?.message || "Failed to load map data. Run ./buildonly.sh and refresh.");
+      }
+    });
+  }
 
   viewModeEl?.addEventListener("change", () => {
     originId = null;

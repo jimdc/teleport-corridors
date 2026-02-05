@@ -5,19 +5,22 @@
 ## Why it’s useful
 - **Underrated neighborhoods**: Find places with surprisingly fast rides to key hubs.
 - **Transit-first truth**: Compare *subway minutes*, not driving distance.
-- **Liveability lenses**: See walk-to-subway, line diversity, and hub teleportness.
+- **Hub-first exploration**: Hubs are first-class objects, with spokes and rankings that teach the mental model.
+- **Sub-tract clarity**: Derived neighborhoods split large tracts into smaller, transit-oriented regions.
 
 ## What you can explore
-- **Map**: Click an origin and see subway-minute reach (with routes + isochrones).
-- **Teleport corridors**: “Looks far, rides fast” rankings to chosen hubs.
-- **Centrality**: Neighborhoods most connected to the rest of the network.
-- **Living**: Teleportness, walk-to-subway, and line diversity views.
+- **Centrality**: Neighborhoods most connected to the rest of the network (hub / median / low-transfer).
+- **Teleportness**: “Looks far, rides fast” rankings to chosen hubs.
+- **Corridors**: Hub-to-spoke lists that surface underrated outer-borough trips.
+- **Cartogram**: Resizes areas by a selected scalar (population first).
+- **Derived neighborhoods**: Station-partitioned regions with StreetEasy-style naming and confidence.
 
 ## Live site
 [![Live site](https://img.shields.io/badge/Live%20site-jimdc.github.io%2Fteleport--corridors-4F46E5?style=flat&logo=github)](https://jimdc.github.io/teleport-corridors/)
 
 ## Data + offline-first
 All data is precompiled from the MTA GTFS and neighborhood boundaries, then served as static files. No live APIs required once built.
+Derived neighborhoods are built from micro-units assigned to their nearest station, then named using a local gazetteer when available.
 
 ---
 

@@ -668,7 +668,7 @@ def write_graph_json(
 
 
 def pick_neighborhood_id(props: dict, idx: int) -> str:
-    for k in ("NTACode", "nta_code", "nta", "id", "GEOID", "geoid"):
+    for k in ("NTACode", "nta_code", "nta", "nta2020", "cdta2020", "id", "GEOID", "geoid"):
         v = props.get(k)
         if v:
             return str(v)

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Methodology · NYC Transit Atlas</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="title">
+        <a class="brand" href="./">Teleport corridors</a>
+        <span class="status">Methodology</span>
+      </div>
+
+      <nav class="nav">
+        <a class="nav-link" href="./centrality.html">Centrality</a>
+        <a class="nav-link" href="./living.html">Teleportness</a>
+        <a class="nav-link" href="./teleport-corridors.html">Corridors</a>
+        <a class="nav-link" href="./glossary.html">Glossary</a>
+        <a class="nav-link is-active" href="./methodology.html">Methodology</a>
+      </nav>
+
+      <div class="controls"></div>
+    </header>
+
+    <main class="page">
+      <section class="page-card">
+        <h1 class="page-title">Methodology</h1>
+        <p class="page-subtitle">How the model works, and what the “derived neighborhoods” actually mean.</p>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">1) What the app measures</h2>
+        <p class="page-text">
+          The core data is subway travel time between areas. From that we derive:
+          <b>centrality</b> (how connected a place is to everything else) and <b>corridors</b> (trips that look far by distance
+          but are fast by transit).
+        </p>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">2) Why census tracts are not enough</h2>
+        <p class="page-text">
+          Tracts are administrative boundaries, not lived neighborhoods. They often bundle multiple places with different transit
+          access. This app adds a sub-tract layer to capture variation within those boundaries.
+        </p>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">3) Micro-units (sub-tract substrate)</h2>
+        <p class="page-text">
+          We create a small grid of micro-units, then redistribute tract-level values into those cells by area overlap. This gives
+          a finer surface without inventing new data.
+        </p>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">4) Derived neighborhoods</h2>
+        <p class="page-text">
+          Micro-units are grouped into smaller regions using a deterministic partition: each cell is assigned to its nearest subway
+          station, then merged into station-based regions. These are smaller than tracts and align better with transit behavior.
+        </p>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">5) Naming (StreetEasy-style, no invention)</h2>
+        <p class="page-text">
+          We prefer established neighborhood names when an authoritative polygon set is available. If not, we fall back to the
+          nearest subway station name and use compound names when overlaps are ambiguous. When multiple regions share the same
+          label, we add a short station suffix (or a compact directional tag). We avoid inventing new trendy names.
+        </p>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">6) Hub-first UI cues</h2>
+        <p class="page-text">
+          Hubs are rendered as first-class objects (rings + subtle halos). Labels are intentionally sparse: the map stays clean and
+          the sidebar acts as the “label sink” for spokes, rankings, and detail.
+        </p>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">7) Cartogram</h2>
+        <p class="page-text">
+          Cartogram mode resizes areas so their <b>area</b> encodes a selected metric (population first). It keeps the same
+          hover/label behavior but trades geographic fidelity for scale clarity.
+        </p>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">8) Limitations</h2>
+        <ul class="page-list">
+          <li>Derived boundaries are a model of transit access, not official borders.</li>
+          <li>Name confidence varies; some regions are only loosely tied to a recognized label.</li>
+          <li>Subway schedules change; the app uses a snapshot of service patterns.</li>
+          <li>Cartograms prioritize metric scale over exact geometry.</li>
+        </ul>
+      </section>
+
+      <section class="page-card">
+        <h2 class="card-title">Glossary</h2>
+        <div class="glossary">
+          <div class="glossary-item">
+            <div class="glossary-term">Tract</div>
+            <div class="glossary-def">An official statistical unit (large, administrative, not always “felt” as a neighborhood).</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Micro-unit</div>
+            <div class="glossary-def">A small grid cell used to redistribute tract values by area overlap.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Derived neighborhood</div>
+            <div class="glossary-def">A region made by grouping micro-units (currently by nearest subway station).</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Hub</div>
+            <div class="glossary-def">A key destination you care about (Midtown, Downtown, LIC, etc.).</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Spoke</div>
+            <div class="glossary-def">A candidate origin area that connects well to a hub.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Confidence</div>
+            <div class="glossary-def">A simple indicator of how strongly a derived region overlaps a recognized name.</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
