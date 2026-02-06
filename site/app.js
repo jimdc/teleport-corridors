@@ -1,10 +1,20 @@
+import { paretoFront, scoreItems, evaluateThresholds, computeTipping } from "./judge_core.js";
+
 const DATA_DIR = "./data";
 const ISOCHRONE_MINUTES = [15, 30, 45, 60, 90, 120, 150, 180];
 const HUE_BY_LINE_ALWAYS_ON = true;
 const ISOCHRONES_ALWAYS_ON = true;
 const TELEPORT_EXPECTED_SPEED_KM_PER_MIN = 0.25; // ~15 km/h baseline for "minutes saved"
+const WALK_SPEED_KM_PER_MIN = 0.0833; // 5 km/h walking speed
+const LINE_RADIUS_KM = 0.65; // ~650m walk radius
 const LABEL_BUDGET = 12;
 const SPOKE_LABEL_COUNT = 10;
+let walkMinutesById = new Map();
+let lineCountById = new Map();
+let neighborhoods = [];
+let routes = [];
+let stops = [];
+let edges = [];
 const HUB_HEX = {
   manhattan: "#06b6d4",
   brooklyn: "#10b981",
@@ -571,6 +581,52 @@ function haversineKm([lat1, lon1], [lat2, lon2]) {
     Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
   return 2 * R * Math.asin(Math.sqrt(a));
 }
+
+const computeWalkLineMetrics = () => {
+  walkMinutesById = new Map();
+  lineCountById = new Map();
+  if (!stops?.length || !neighborhoods?.length) return;
+
+  const routesByStop = Array.from({ length: stops.length }, () => new Set());
+  for (const e of edges || []) {
+    const ri = e?.[3];
+    if (ri == null) continue;
+    const a = e?.[0];
+    const b = e?.[1];
+    if (routesByStop[a]) routesByStop[a].add(ri);
+    if (routesByStop[b]) routesByStop[b].add(ri);
+  }
+
+  const routeKey = (idx) => {
+    const r = routes?.[idx];
+    return r?.short_name || r?.id || String(idx);
+  };
+
+  for (const n of neighborhoods) {
+    const id = String(n.id);
+    const c = n?.centroid;
+    if (!Array.isArray(c) || c.length < 2) {
+      walkMinutesById.set(id, null);
+      lineCountById.set(id, 0);
+      continue;
+    }
+    let best = null;
+    const lineSet = new Set();
+    for (let i = 0; i < stops.length; i++) {
+      const s = stops[i];
+      if (!s) continue;
+      const d = haversineKm([c[0], c[1]], [s.lat, s.lon]);
+      if (!Number.isFinite(d)) continue;
+      if (best == null || d < best) best = d;
+      if (d <= LINE_RADIUS_KM) {
+        for (const r of routesByStop[i]) lineSet.add(routeKey(r));
+      }
+    }
+    const walkMinutes = best != null ? (best / WALK_SPEED_KM_PER_MIN) : null;
+    walkMinutesById.set(id, walkMinutes);
+    lineCountById.set(id, lineSet.size);
+  }
+};
 
 function* iterLonLatCoords(geometry) {
   if (!geometry) return;
@@ -1311,10 +1367,10 @@ async function main() {
     scheduleLabelsRerender?.();
   };
 
-  let neighborhoods = [];
-  let routes = [];
-  let stops = [];
-  let edges = [];
+  neighborhoods = [];
+  routes = [];
+  stops = [];
+  edges = [];
   let adjacency = [];
   let minutesMatrix = null; // neighborhood x neighborhood minutes (filtered to visible set)
   let matrixRoutes = []; // routes referenced by matrix.first_route (filtered)
@@ -1355,6 +1411,21 @@ async function main() {
   let livingExcludeShortTrips = true;
   let livingColorKey = "teleportness";
   let livingRawHigherIsBetter = true;
+
+  // Judge mode: hard thresholds + ranked recommendations.
+  let judgeConfig = {
+    maxCommute: 45,
+    maxWalk: 10,
+    minLines: 2,
+    priority: "balanced",
+  };
+  const JUDGE_WEIGHTS = {
+    balanced: { commute: 0.5, walk: 0.3, lines: 0.2 },
+    commute: { commute: 0.7, walk: 0.2, lines: 0.1 },
+    access: { commute: 0.4, walk: 0.2, lines: 0.4 },
+  };
+  let judgeById = new Map();
+  let judgeResults = { recommended: [], disqualified: [], tipping: null };
 
   // Views mode: scalar surfaces (population, density, reachable population/jobs).
   let viewsMetricKey = "population";
@@ -1573,6 +1644,7 @@ async function main() {
     routes = graph.routes || [];
     stops = graph.stops || [];
     edges = graph.edges || [];
+    computeWalkLineMetrics();
 
     const allMinutes = matrix?.minutes || null;
     if (Array.isArray(allMinutes) && keptOrigIdx.length) {
@@ -1843,8 +1915,9 @@ async function main() {
   const isCentralityPage = document.body.classList.contains("centrality-page");
   const isLivingPage = document.body.classList.contains("living-page");
   const isViewsPage = document.body.classList.contains("views-page");
+  const isDecidePage = document.body.classList.contains("decide-page");
   const getViewMode = () => {
-    if (isCentralityPage) return "centrality";
+    if (isCentralityPage || isDecidePage) return "centrality";
     if (isLivingPage) return "living";
     if (isViewsPage) return "views";
     return viewModeEl?.value || "time";
@@ -1943,7 +2016,7 @@ async function main() {
   let centralityPresetIdByKey = new Map();
 
   const setupCentralityUi = () => {
-    if (!isCentralityPage) return;
+    if (!isCentralityPage && !isDecidePage) return;
     const metricRadios = Array.from(document.querySelectorAll('input[name="centralityMetric"]'));
     const hubPresetRadios = Array.from(document.querySelectorAll('input[name="centralityHubPreset"]'));
     const hubControlsEl = document.getElementById("hubControls");
@@ -2107,6 +2180,56 @@ async function main() {
         centralityApplyUi();
       });
     }
+  };
+
+  let judgeUiBound = false;
+  const setupJudgeUi = () => {
+    if (!isCentralityPage && !isDecidePage) return;
+    const maxCommuteEl = document.getElementById("judgeMaxCommute");
+    const maxWalkEl = document.getElementById("judgeMaxWalk");
+    const minLinesEl = document.getElementById("judgeMinLines");
+    const priorityRadios = Array.from(document.querySelectorAll('input[name="judgePriority"]'));
+    if (!maxCommuteEl || !maxWalkEl || !minLinesEl) return;
+
+    const storedMaxCommute = Number(localStorage.getItem("atlas.judgeMaxCommute") || judgeConfig.maxCommute);
+    const storedMaxWalk = Number(localStorage.getItem("atlas.judgeMaxWalk") || judgeConfig.maxWalk);
+    const storedMinLines = Number(localStorage.getItem("atlas.judgeMinLines") || judgeConfig.minLines);
+    const storedPriority = localStorage.getItem("atlas.judgePriority") || judgeConfig.priority;
+
+    judgeConfig.maxCommute = Number.isFinite(storedMaxCommute) ? storedMaxCommute : judgeConfig.maxCommute;
+    judgeConfig.maxWalk = Number.isFinite(storedMaxWalk) ? storedMaxWalk : judgeConfig.maxWalk;
+    judgeConfig.minLines = Number.isFinite(storedMinLines) ? storedMinLines : judgeConfig.minLines;
+    judgeConfig.priority = storedPriority;
+
+    maxCommuteEl.value = String(judgeConfig.maxCommute);
+    maxWalkEl.value = String(judgeConfig.maxWalk);
+    minLinesEl.value = String(judgeConfig.minLines);
+    const p = priorityRadios.find((r) => r.value === judgeConfig.priority);
+    if (p) p.checked = true;
+
+    if (judgeUiBound) {
+      renderJudgePanels();
+      return;
+    }
+    judgeUiBound = true;
+
+    const update = () => {
+      judgeConfig.maxCommute = Number(maxCommuteEl.value || judgeConfig.maxCommute);
+      judgeConfig.maxWalk = Number(maxWalkEl.value || judgeConfig.maxWalk);
+      judgeConfig.minLines = Number(minLinesEl.value || judgeConfig.minLines);
+      judgeConfig.priority = priorityRadios.find((r) => r.checked)?.value || judgeConfig.priority;
+      localStorage.setItem("atlas.judgeMaxCommute", String(judgeConfig.maxCommute));
+      localStorage.setItem("atlas.judgeMaxWalk", String(judgeConfig.maxWalk));
+      localStorage.setItem("atlas.judgeMinLines", String(judgeConfig.minLines));
+      localStorage.setItem("atlas.judgePriority", judgeConfig.priority);
+      renderJudgePanels();
+    };
+
+    maxCommuteEl.addEventListener("change", update);
+    maxWalkEl.addEventListener("change", update);
+    minLinesEl.addEventListener("change", update);
+    for (const r of priorityRadios) r.addEventListener("change", update);
+    renderJudgePanels();
   };
 
   const formatSignedMinutes = (v) => {
@@ -3253,6 +3376,7 @@ async function main() {
     const destNameEl = document.getElementById("destName");
     const routeSummaryEl = document.getElementById("routeSummary");
     const routeStepsEl = document.getElementById("routeSteps");
+    if (!destNameEl || !routeSummaryEl || !routeStepsEl) return;
     renderNameWithBorough(
       destNameEl,
       displayName(nameForId(id)),
@@ -3268,6 +3392,7 @@ async function main() {
     const destNameEl = document.getElementById("destName");
     const routeSummaryEl = document.getElementById("routeSummary");
     const routeStepsEl = document.getElementById("routeSteps");
+    if (!destNameEl || !routeSummaryEl || !routeStepsEl) return;
     destNameEl.replaceChildren(document.createTextNode("Hover a neighborhood"));
     routeSummaryEl.textContent = "";
     setList(routeStepsEl, []);
@@ -3733,6 +3858,159 @@ async function main() {
     renderSpokesPanel();
   };
 
+  const computeJudgeResults = () => {
+    judgeById = new Map();
+    judgeResults = { recommended: [], disqualified: [], tipping: null };
+
+    if (!minutesMatrix?.length || (!isDecidePage && centralityMetricKey !== "hub") || !hubCentralityHubId) return;
+    const hubIdx = indexById().get(String(hubCentralityHubId));
+    if (hubIdx == null) return;
+
+    const recommended = [];
+    const disqualified = [];
+    for (let i = 0; i < neighborhoods.length; i++) {
+      const n = neighborhoods[i];
+      const id = String(n.id);
+      const commute = minutesMatrix?.[i]?.[hubIdx];
+      const walk = walkMinutesById.get(id);
+      const lines = lineCountById.get(id) ?? 0;
+
+      const reasons = evaluateThresholds({ commute, walk, lines }, judgeConfig);
+      const entry = {
+        id,
+        name: displayName(nameForId(id)),
+        commute,
+        walk,
+        lines,
+        reasons,
+      };
+      judgeById.set(id, entry);
+
+      if (reasons.length) {
+        let severity = 0;
+        if (Number.isFinite(commute) && commute > judgeConfig.maxCommute) severity += commute - judgeConfig.maxCommute;
+        if (Number.isFinite(walk) && walk > judgeConfig.maxWalk) severity += (walk - judgeConfig.maxWalk) * 1.5;
+        if (Number.isFinite(lines) && lines < judgeConfig.minLines) severity += (judgeConfig.minLines - lines) * 5;
+        entry.severity = severity;
+        disqualified.push(entry);
+      } else {
+        recommended.push(entry);
+      }
+    }
+
+    const pareto = paretoFront(recommended, { minimize: ["commute", "walk"], maximize: ["lines"] });
+    const pool = pareto.length ? pareto : recommended;
+
+    const ranges = {};
+    for (const key of ["commute", "walk", "lines"]) {
+      const vals = pool.map((d) => d[key]).filter((v) => Number.isFinite(v));
+      if (!vals.length) continue;
+      ranges[key] = { min: Math.min(...vals), max: Math.max(...vals) };
+    }
+
+    const weights = JUDGE_WEIGHTS[judgeConfig.priority] || JUDGE_WEIGHTS.balanced;
+    const scored = scoreItems(pool, { weights, ranges, invert: { lines: true } });
+    scored.sort((a, b) => a.score - b.score);
+
+    disqualified.sort((a, b) => (b.severity || 0) - (a.severity || 0));
+
+    const tipping = computeTipping(scored[0], scored[1], { ranges, weights });
+    judgeResults = { recommended: scored, disqualified, tipping, ranges, weights };
+  };
+
+  const renderJudgeList = (el, items, formatWhy) => {
+    if (!el) return;
+    el.replaceChildren();
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.className = "judge-item";
+
+      const name = document.createElement("div");
+      name.className = "judge-item-name";
+      name.textContent = item.name;
+
+      const why = document.createElement("div");
+      why.className = "judge-item-why";
+      why.textContent = formatWhy(item);
+
+      li.appendChild(name);
+      li.appendChild(why);
+
+      li.addEventListener("mouseenter", () => onClickFeature.onHover?.(item.id));
+      li.addEventListener("mouseleave", () => onClickFeature.onHoverEnd?.(item.id));
+      li.addEventListener("click", (e) => {
+        e.preventDefault();
+        const clicked = String(item.id);
+        pinnedDestId = pinnedDestId === clicked ? null : clicked;
+        hoveredDestId = null;
+        if (pinnedDestId) {
+          onClickFeature.onHover?.(pinnedDestId);
+        } else {
+          onClickFeature.onHoverEnd?.(clicked);
+        }
+        restyle();
+        renderLabels();
+        updateListsAndDirections();
+      });
+
+      el.appendChild(li);
+    }
+  };
+
+  const renderJudgePanels = () => {
+    if (!isCentralityPage && !isDecidePage) return;
+    const panel = document.getElementById("judgePanel");
+    const recEl = document.getElementById("judgeRecommended");
+    const disqEl = document.getElementById("judgeDisqualified");
+    const threshEl = document.getElementById("judgeThresholds");
+    const tipEl = document.getElementById("judgeTipping");
+
+    if (!panel || !recEl || !disqEl || !threshEl || !tipEl) return;
+    if (!isDecidePage && centralityMetricKey !== "hub") {
+      panel.hidden = false;
+      recEl.replaceChildren();
+      disqEl.replaceChildren();
+      threshEl.textContent = "Switch to “To hub” to use Judge.";
+      tipEl.textContent = "—";
+      return;
+    }
+
+    computeJudgeResults();
+    const top = judgeResults.recommended.slice(0, 8);
+    const bottom = judgeResults.disqualified.slice(0, 8);
+
+    renderJudgeList(recEl, top, (d) => {
+      const commute = Number.isFinite(d.commute) ? `${Math.round(d.commute)}m` : "—";
+      const walk = Number.isFinite(d.walk) ? `${d.walk.toFixed(1)}m walk` : "—";
+      return `Commute ${commute} · ${walk} · ${d.lines} lines`;
+    });
+
+    renderJudgeList(disqEl, bottom, (d) => (d.reasons?.length ? d.reasons.join("; ") : "Fails thresholds"));
+
+    const activeId = pinnedDestId != null ? pinnedDestId : hoveredDestId;
+    if (!activeId || !judgeById.has(String(activeId))) {
+      threshEl.textContent = "Hover a neighborhood to see threshold checks.";
+    } else {
+      const entry = judgeById.get(String(activeId));
+      if (!entry?.reasons?.length) {
+        threshEl.textContent = "Passes all thresholds.";
+      } else {
+        threshEl.textContent = entry.reasons.join(" · ");
+      }
+    }
+
+    if (judgeResults?.tipping) {
+      const deltas = judgeResults.tipping;
+      const parts = [];
+      if (deltas.commute) parts.push(`+${Math.round(deltas.commute)} min commute`);
+      if (deltas.walk) parts.push(`+${deltas.walk.toFixed(1)} min walk`);
+      if (deltas.lines) parts.push(`-${Math.max(1, Math.round(deltas.lines))} lines`);
+      tipEl.textContent = parts.length ? `Top pick flips with ${parts.join(", ")}.` : "—";
+    } else {
+      tipEl.textContent = "Not enough candidates to compute tipping point.";
+    }
+  };
+
   const renderSpokeList = (el, items, formatFn) => {
     if (!el) return;
     el.replaceChildren();
@@ -3828,7 +4106,11 @@ async function main() {
     const panel = document.getElementById("centralityPanel");
     const topEl = document.getElementById("centralTop");
     const botEl = document.getElementById("centralBottom");
-    if (!panel || !topEl || !botEl) return;
+    if (!panel || !topEl || !botEl) {
+      renderJudgePanels();
+      renderSpokesPanel();
+      return;
+    }
 
     const mode = getViewMode();
     panel.hidden = mode !== "centrality";
@@ -3851,6 +4133,7 @@ async function main() {
     const fmt = (r) => `${r.name} — ${formatCentralityValue(r.id)}`;
     setList(topEl, rows.slice(0, 10).map(fmt));
     setList(botEl, rows.slice(-10).reverse().map(fmt));
+    renderJudgePanels();
     renderSpokesPanel();
   };
 
@@ -3972,6 +4255,7 @@ async function main() {
       await loadMatrix(getProfile());
       render();
       setupCentralityUi();
+      setupJudgeUi();
       setupLivingUi();
       setupCartogramUi();
       setupViewsUi();
@@ -3990,6 +4274,7 @@ async function main() {
         await loadMatrix(getProfile());
         render();
         setupCentralityUi();
+        setupJudgeUi();
         setupLivingUi();
         setupCartogramUi();
         setupViewsUi();
@@ -4017,6 +4302,7 @@ async function main() {
         await loadMatrix(getProfile());
         render();
         setupCentralityUi();
+        setupJudgeUi();
         setupLivingUi();
         setupCartogramUi();
         setupViewsUi();

@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Living · NYC Transit Atlas</title>
+    <title>Decide · Teleport Corridors</title>
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body class="living-page">
+  <body class="decide-page">
     <header>
       <div class="title">
         <a class="brand" href="./">Teleport corridors</a>
@@ -16,8 +16,8 @@
 
       <nav class="nav">
         <a class="nav-link" href="./centrality.html">Centrality</a>
-        <a class="nav-link is-active" href="./living.html">Teleportness</a>
-        <a class="nav-link" href="./decide.html">Decide</a>
+        <a class="nav-link" href="./living.html">Teleportness</a>
+        <a class="nav-link is-active" href="./decide.html">Decide</a>
         <a class="nav-link" href="./teleport-corridors.html">Corridors</a>
         <a class="nav-link" href="./glossary.html">Glossary</a>
         <a class="nav-link" href="./methodology.html">Methodology</a>
@@ -31,9 +31,6 @@
       </div>
 
       <div class="controls">
-        <select id="viewMode" hidden>
-          <option value="living" selected>Living</option>
-        </select>
         <fieldset class="segmented" aria-label="Base unit">
           <legend class="sr-only">Base unit</legend>
           <label>
@@ -84,36 +81,32 @@
 
     <main>
       <div id="map">
-        <svg id="mapSvg" role="img" aria-label="NYC neighborhoods living-value map"></svg>
+        <svg id="mapSvg" role="img" aria-label="NYC neighborhoods decision map"></svg>
         <svg id="labelLeaders" aria-hidden="true"></svg>
         <div id="labelRails" aria-hidden="true">
           <div id="labelRailLeft" class="label-rail"></div>
           <div id="labelRailRight" class="label-rail"></div>
         </div>
       </div>
-
       <aside id="panel">
-        <div class="panel-section">
-          <div class="panel-title">Teleportness</div>
-          <div class="panel-hint">
-            Tools for spotting outer-borough neighborhoods that “look far” on a map but feel close by subway.
-          </div>
-
-          <div id="livingTeleportControls" class="panel-controls" style="margin-top:10px;">
-            <div class="panel-hint">Hub: <span id="livingHubName" class="mono">Midtown</span></div>
-            <div class="hub-groups" id="livingHubGroup" style="margin-top:6px;">
+        <div id="judgePanel" class="panel-section">
+          <div class="panel-title">Decide</div>
+          <div class="panel-hint">Set hard limits, then we recommend and disqualify.</div>
+          <div id="hubControls" class="panel-controls" style="margin-top:8px;">
+            <div class="panel-hint">Hub: <span id="centralityHubName" class="mono">Midtown</span></div>
+            <div class="hub-groups" id="centralityHubGroup" style="margin-top:6px;">
               <fieldset class="segmented compact" aria-label="Manhattan hubs">
                 <legend>Manhattan hubs</legend>
                 <label>
-                  <input type="radio" name="livingHubPreset" value="midtown" checked />
+                  <input type="radio" name="centralityHubPreset" value="midtown" checked />
                   <span><span class="boro-pill boro-manhattan">M</span> Midtown</span>
                 </label>
                 <label>
-                  <input type="radio" name="livingHubPreset" value="downtown" />
+                  <input type="radio" name="centralityHubPreset" value="downtown" />
                   <span><span class="boro-pill boro-manhattan">M</span> Downtown</span>
                 </label>
                 <label>
-                  <input type="radio" name="livingHubPreset" value="hudson_yards" />
+                  <input type="radio" name="centralityHubPreset" value="hudson_yards" />
                   <span><span class="boro-pill boro-manhattan">M</span> Hudson Yds</span>
                 </label>
               </fieldset>
@@ -121,19 +114,19 @@
               <fieldset class="segmented compact" aria-label="Brooklyn hubs">
                 <legend>Brooklyn hubs</legend>
                 <label>
-                  <input type="radio" name="livingHubPreset" value="williamsburg" />
+                  <input type="radio" name="centralityHubPreset" value="williamsburg" />
                   <span><span class="boro-pill boro-brooklyn">Bk</span> W'burg</span>
                 </label>
                 <label>
-                  <input type="radio" name="livingHubPreset" value="downtown_bk" />
+                  <input type="radio" name="centralityHubPreset" value="downtown_bk" />
                   <span><span class="boro-pill boro-brooklyn">Bk</span> Dt BK</span>
                 </label>
                 <label>
-                  <input type="radio" name="livingHubPreset" value="greenpoint" />
+                  <input type="radio" name="centralityHubPreset" value="greenpoint" />
                   <span><span class="boro-pill boro-brooklyn">Bk</span> Greenpoint</span>
                 </label>
                 <label>
-                  <input type="radio" name="livingHubPreset" value="bushwick" />
+                  <input type="radio" name="centralityHubPreset" value="bushwick" />
                   <span><span class="boro-pill boro-brooklyn">Bk</span> Bushwick</span>
                 </label>
               </fieldset>
@@ -141,82 +134,91 @@
               <fieldset class="segmented compact" aria-label="Queens hubs">
                 <legend>Queens hubs</legend>
                 <label>
-                  <input type="radio" name="livingHubPreset" value="lic" />
+                  <input type="radio" name="centralityHubPreset" value="lic" />
                   <span><span class="boro-pill boro-queens">Q</span> LIC</span>
                 </label>
                 <label>
-                  <input type="radio" name="livingHubPreset" value="astoria" />
+                  <input type="radio" name="centralityHubPreset" value="astoria" />
                   <span><span class="boro-pill boro-queens">Q</span> Astoria</span>
                 </label>
               </fieldset>
-
-              <fieldset id="livingUserHubGroup" class="segmented compact user-hub-group" aria-label="User hub" hidden>
+              <fieldset id="centralityUserHubGroup" class="segmented compact user-hub-group" aria-label="User hub" hidden>
                 <legend>User hub</legend>
                 <label>
-                  <input type="radio" name="livingHubPreset" value="user" />
+                  <input type="radio" name="centralityHubPreset" value="user" />
                   <span class="hub-chip-label">
-                    <span id="livingUserHubPill" class="boro-pill">U</span>
-                    <span id="livingUserHubName">User hub</span>
+                    <span id="centralityUserHubPill" class="boro-pill">U</span>
+                    <span id="centralityUserHubName">User hub</span>
                     <span class="hub-badge">User hub</span>
                   </span>
                 </label>
               </fieldset>
             </div>
-
             <label style="margin-top:8px;">
               Choose your own hub
-              <select id="livingHubCustom"></select>
-            </label>
-
-            <label class="toggle compact" style="margin-top:6px;">
-              <input id="livingExcludeShort" type="checkbox" checked />
-              <span>Prefer longer trips (exclude &lt;6km)</span>
+              <select id="centralityHubCustom"></select>
             </label>
           </div>
-
-          <div id="livingMetricHint" class="panel-hint" style="margin-top:8px;">
-            “Minutes saved” vs a baseline travel speed to your chosen hub. Higher = more “teleport-y”.
-            Bubble size shows teleportness intensity.
+          <div class="judge-controls">
+            <label>
+              Max commute (min)
+              <input id="judgeMaxCommute" type="number" min="10" max="120" step="1" value="45" />
+            </label>
+            <label>
+              Max walk (min)
+              <input id="judgeMaxWalk" type="number" min="2" max="30" step="0.5" value="10" />
+            </label>
+            <label>
+              Min lines
+              <input id="judgeMinLines" type="number" min="1" max="10" step="1" value="2" />
+            </label>
+            <fieldset class="segmented compact" aria-label="Priority">
+              <legend>Priority</legend>
+              <label>
+                <input type="radio" name="judgePriority" value="balanced" checked />
+                <span>Balanced</span>
+              </label>
+              <label>
+                <input type="radio" name="judgePriority" value="commute" />
+                <span>Commute</span>
+              </label>
+              <label>
+                <input type="radio" name="judgePriority" value="access" />
+                <span>Access</span>
+              </label>
+            </fieldset>
           </div>
-          <div class="legend-row" style="margin-top:6px;">
-            <span class="bubble-swatch" aria-hidden="true"></span>
-            <span>Bubble size = minutes saved</span>
-          </div>
-          <div class="panel-hint" style="margin-top:6px;">Tip: Click a neighborhood to pin hover details.</div>
+          <div class="panel-title" style="margin-top:10px;">Recommended</div>
+          <ol id="judgeRecommended"></ol>
+          <div class="panel-title" style="margin-top:10px;">Do not choose</div>
+          <ol id="judgeDisqualified"></ol>
         </div>
 
-        <div class="panel-section">
-          <div id="livingTopTitle" class="panel-title">Best</div>
-          <ol id="livingTop"></ol>
-          <div id="livingBottomTitle" class="panel-title" style="margin-top:10px;">Worst</div>
-          <ol id="livingBottom"></ol>
-        </div>
-
-        <div id="spokesPanel" class="panel-section" hidden>
-          <div class="panel-title">Spokes to <span id="spokesHubLabel">Hub</span></div>
-          <div class="panel-hint">Closest spokes by minutes.</div>
-          <ol id="spokesClosest"></ol>
-          <div class="panel-title" style="margin-top:10px;">Most teleport-y</div>
-          <ol id="spokesTeleport"></ol>
+        <div id="judgeThresholdsPanel" class="panel-section">
+          <div class="panel-title">Thresholds</div>
+          <div id="judgeThresholds" class="panel-hint">Hover a neighborhood to see threshold checks.</div>
+          <div class="panel-title" style="margin-top:10px;">Tipping point</div>
+          <div id="judgeTipping" class="panel-hint">—</div>
         </div>
 
         <div class="panel-section">
           <div class="panel-title">Hover</div>
-          <div id="livingHoverName" class="panel-value">Hover a neighborhood</div>
-          <div id="livingHoverMeta" class="panel-hint"></div>
+          <div id="destName" class="panel-value">Hover a neighborhood</div>
+          <div id="routeSummary" class="panel-hint"></div>
+          <ol id="routeSteps"></ol>
           <div id="cartogramScalarValue" class="panel-hint" hidden></div>
-          <div id="livingHoverExtra" class="panel-hint mono"></div>
         </div>
 
         <div class="panel-section">
           <div class="panel-title">Legend</div>
-          <div id="livingLegendGradient" class="legend-gradient living" aria-hidden="true"></div>
+          <div class="legend-gradient centrality" aria-hidden="true"></div>
           <div class="legend-scale">
-            <span id="livingLegendLeft" class="mono">low</span>
-            <span id="livingLegendRight" class="mono">high</span>
+            <span class="mono">low</span>
+            <span class="mono">high</span>
           </div>
           <div id="cartogramLegendNote" class="panel-hint" hidden>Area encodes selected metric.</div>
         </div>
+        <div id="legendMax" hidden></div>
       </aside>
     </main>
 

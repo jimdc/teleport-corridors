@@ -9,18 +9,26 @@
 - **Sub-tract clarity**: Derived neighborhoods split large tracts into smaller, transit-oriented regions.
 
 ## What you can explore
+- **Decide**: Judge Mode with hard thresholds and explicit disqualifications.
 - **Centrality**: Neighborhoods most connected to the rest of the network (hub / median / low-transfer).
 - **Teleportness**: “Looks far, rides fast” rankings to chosen hubs.
 - **Corridors**: Hub-to-spoke lists that surface underrated outer-borough trips.
 - **Cartogram**: Resizes areas by a selected scalar (population first).
 - **Derived neighborhoods**: Station-partitioned regions with StreetEasy-style naming and confidence.
 - **Abbreviate**: Shortens long neighborhood names to reduce label clutter.
+- **Judge Mode**: Hard thresholds + ranked recommendations with explicit disqualifications.
 
 ### Cartogram “resize by”
 When the map is set to **Cartogram**, neighborhood area is resized to encode the selected metric (Population, Housing Units, Jobs). The dropdown only lists scalar metrics (not reachability). In Geographic mode the dropdown is disabled because geometry is not rescaled.
 
 ### Teleportness bubbles
 In the Teleportness view, bubble size represents **minutes saved** to the selected hub (larger = more teleport‑y).
+
+### Judge Mode
+Judge Mode applies **hard thresholds** (commute, walk, line access), then ranks the Pareto‑optimal set. See `/docs/judge-mode.md` for details.
+
+### TODO
+- Think about how Decide can go beyond just re‑ranking lists: make the UI more intuitive and let the map highlight disqualified vs recommended neighborhoods directly (not just sidebar lists).
 
 ## Live site
 [![Live site](https://img.shields.io/badge/Live%20site-jimdc.github.io%2Fteleport--corridors-4F46E5?style=flat&logo=github)](https://jimdc.github.io/teleport-corridors/)

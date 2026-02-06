@@ -532,6 +532,45 @@ main {
   gap: 8px;
 }
 
+.judge-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.judge-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.judge-controls input[type="number"] {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.judge-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: 8px;
+}
+
+.judge-item-name {
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.judge-item-why {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .hub-groups {
   display: flex;
   flex-direction: column;
