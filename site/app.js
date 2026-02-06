@@ -1426,6 +1426,7 @@ async function main() {
   };
   let judgeById = new Map();
   let judgeResults = { recommended: [], disqualified: [], tipping: null };
+  let judgeCacheKey = "";
 
   // Views mode: scalar surfaces (population, density, reachable population/jobs).
   let viewsMetricKey = "population";
@@ -2117,6 +2118,7 @@ async function main() {
         hubCentralityHubLabel = String(useLabel || "");
         if (hubNameEl) hubNameEl.textContent = hubCentralityHubLabel;
         updateUserHubChip(customId);
+        judgeCacheKey = "";
         applyHubCentrality();
       } else {
         const metricKey = metric;
@@ -2222,6 +2224,7 @@ async function main() {
       localStorage.setItem("atlas.judgeMaxWalk", String(judgeConfig.maxWalk));
       localStorage.setItem("atlas.judgeMinLines", String(judgeConfig.minLines));
       localStorage.setItem("atlas.judgePriority", judgeConfig.priority);
+      judgeCacheKey = "";
       renderJudgePanels();
     };
 
@@ -3221,7 +3224,16 @@ async function main() {
       const score = centralityById.get(String(id));
       const livingScore = livingById.get(String(id));
       const viewsScore = viewsById.get(String(id));
-      const { fill, fillOpacity } =
+      let decideEntry = null;
+      let decideStatus = null;
+      const decideActive = isDecidePage;
+      if (decideActive) {
+        ensureJudgeResults();
+        decideEntry = judgeById.get(String(id)) || null;
+        if (decideEntry) decideStatus = decideEntry.reasons?.length ? "disqualified" : "recommended";
+      }
+
+      let { fill, fillOpacity } =
         mode === "centrality"
           ? centralityToFill(score, centralityStats.min, centralityStats.max)
           : mode === "living"
@@ -3235,6 +3247,19 @@ async function main() {
               : hueByLine
                 ? minutesToFillHue(mins, maxMinutes, firstRouteForId(id)?.color)
                 : minutesToFill(mins, maxMinutes);
+
+      if (decideActive && judgeById.size) {
+        if (decideStatus === "recommended") {
+          fill = "rgba(34, 197, 94, 0.35)";
+          fillOpacity = 1;
+        } else if (decideStatus === "disqualified") {
+          fill = "rgba(239, 68, 68, 0.28)";
+          fillOpacity = 1;
+        } else {
+          fill = "rgba(148, 163, 184, 0.12)";
+          fillOpacity = 1;
+        }
+      }
       const isOrigin = origin != null && String(origin) === String(id);
       const isHub =
         mode === "living" &&
@@ -3918,6 +3943,22 @@ async function main() {
     judgeResults = { recommended: scored, disqualified, tipping, ranges, weights };
   };
 
+  const ensureJudgeResults = () => {
+    const key = [
+      hubCentralityHubId || "",
+      getProfile(),
+      getBaseUnit(),
+      judgeConfig.maxCommute,
+      judgeConfig.maxWalk,
+      judgeConfig.minLines,
+      judgeConfig.priority,
+      neighborhoods.length,
+    ].join("|");
+    if (key === judgeCacheKey) return;
+    computeJudgeResults();
+    judgeCacheKey = key;
+  };
+
   const renderJudgeList = (el, items, formatWhy) => {
     if (!el) return;
     el.replaceChildren();
@@ -3975,7 +4016,7 @@ async function main() {
       return;
     }
 
-    computeJudgeResults();
+    ensureJudgeResults();
     const top = judgeResults.recommended.slice(0, 8);
     const bottom = judgeResults.disqualified.slice(0, 8);
 

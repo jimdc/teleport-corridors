@@ -571,6 +571,41 @@ main {
   color: var(--muted);
 }
 
+.judge-legend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.judge-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.judge-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  display: inline-block;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+}
+
+.judge-swatch-recommended {
+  background: rgba(34, 197, 94, 0.35);
+}
+
+.judge-swatch-disqualified {
+  background: rgba(239, 68, 68, 0.28);
+}
+
+.judge-swatch-neutral {
+  background: rgba(148, 163, 184, 0.12);
+}
+
 .hub-groups {
   display: flex;
   flex-direction: column;
