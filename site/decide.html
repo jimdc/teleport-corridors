@@ -159,6 +159,22 @@
               <select id="centralityHubCustom"></select>
             </label>
           </div>
+          <div class="panel-hint" style="margin-top:8px;">Presets</div>
+          <div id="judgePresetButtons" class="segmented compact judge-presets" aria-label="Decision presets">
+            <label>
+              <input type="radio" name="judgePreset" value="balanced" checked />
+              <span>Balanced</span>
+            </label>
+            <label>
+              <input type="radio" name="judgePreset" value="lenient" />
+              <span>Lenient</span>
+            </label>
+            <label>
+              <input type="radio" name="judgePreset" value="strict" />
+              <span>Strict</span>
+            </label>
+          </div>
+          <div id="judgePresetHint" class="panel-hint"></div>
           <div class="judge-controls">
             <label>
               Max commute (min)
@@ -204,6 +220,18 @@
             <div class="judge-legend-item">
               <span class="judge-swatch judge-swatch-neutral"></span>
               Unknown
+            </div>
+            <div class="judge-legend-item">
+              <span class="judge-swatch judge-swatch-commute"></span>
+              Commute over
+            </div>
+            <div class="judge-legend-item">
+              <span class="judge-swatch judge-swatch-walk"></span>
+              Walk too far
+            </div>
+            <div class="judge-legend-item">
+              <span class="judge-swatch judge-swatch-lines"></span>
+              Too few lines
             </div>
           </div>
         </div>

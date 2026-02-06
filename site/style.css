@@ -606,6 +606,26 @@ main {
   background: rgba(148, 163, 184, 0.12);
 }
 
+.judge-swatch-commute {
+  background: rgba(239, 68, 68, 0.55);
+}
+
+.judge-swatch-walk {
+  background: rgba(249, 115, 22, 0.5);
+}
+
+.judge-swatch-lines {
+  background: rgba(168, 85, 247, 0.5);
+}
+
+.judge-presets {
+  margin-top: 6px;
+}
+
+.judge-presets label span {
+  font-size: 12px;
+}
+
 .hub-groups {
   display: flex;
   flex-direction: column;

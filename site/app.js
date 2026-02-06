@@ -1413,12 +1413,12 @@ async function main() {
   let livingRawHigherIsBetter = true;
 
   // Judge mode: hard thresholds + ranked recommendations.
-  let judgeConfig = {
-    maxCommute: 45,
-    maxWalk: 10,
-    minLines: 2,
-    priority: "balanced",
+  const JUDGE_PRESETS = {
+    balanced: { label: "Balanced", maxCommute: 40, maxWalk: 10, minLines: 3, priority: "balanced" },
+    lenient: { label: "Lenient", maxCommute: 55, maxWalk: 12, minLines: 2, priority: "balanced" },
+    strict: { label: "Strict", maxCommute: 35, maxWalk: 8, minLines: 3, priority: "commute" },
   };
+  let judgeConfig = { ...JUDGE_PRESETS.balanced };
   const JUDGE_WEIGHTS = {
     balanced: { commute: 0.5, walk: 0.3, lines: 0.2 },
     commute: { commute: 0.7, walk: 0.2, lines: 0.1 },
@@ -1427,6 +1427,7 @@ async function main() {
   let judgeById = new Map();
   let judgeResults = { recommended: [], disqualified: [], tipping: null };
   let judgeCacheKey = "";
+  let judgePresetKey = "balanced";
 
   // Views mode: scalar surfaces (population, density, reachable population/jobs).
   let viewsMetricKey = "population";
@@ -2191,23 +2192,40 @@ async function main() {
     const maxWalkEl = document.getElementById("judgeMaxWalk");
     const minLinesEl = document.getElementById("judgeMinLines");
     const priorityRadios = Array.from(document.querySelectorAll('input[name="judgePriority"]'));
+    const presetRadios = Array.from(document.querySelectorAll('input[name="judgePreset"]'));
+    const presetHintEl = document.getElementById("judgePresetHint");
     if (!maxCommuteEl || !maxWalkEl || !minLinesEl) return;
 
+    const hasStored = localStorage.getItem("atlas.judgeMaxCommute") != null;
+    const storedPreset = localStorage.getItem("atlas.judgePreset") || judgePresetKey;
     const storedMaxCommute = Number(localStorage.getItem("atlas.judgeMaxCommute") || judgeConfig.maxCommute);
     const storedMaxWalk = Number(localStorage.getItem("atlas.judgeMaxWalk") || judgeConfig.maxWalk);
     const storedMinLines = Number(localStorage.getItem("atlas.judgeMinLines") || judgeConfig.minLines);
     const storedPriority = localStorage.getItem("atlas.judgePriority") || judgeConfig.priority;
 
-    judgeConfig.maxCommute = Number.isFinite(storedMaxCommute) ? storedMaxCommute : judgeConfig.maxCommute;
-    judgeConfig.maxWalk = Number.isFinite(storedMaxWalk) ? storedMaxWalk : judgeConfig.maxWalk;
-    judgeConfig.minLines = Number.isFinite(storedMinLines) ? storedMinLines : judgeConfig.minLines;
-    judgeConfig.priority = storedPriority;
+    if (!hasStored) {
+      const preset = JUDGE_PRESETS[storedPreset] || JUDGE_PRESETS.balanced;
+      judgePresetKey = storedPreset;
+      judgeConfig = { ...preset };
+    } else {
+      judgeConfig.maxCommute = Number.isFinite(storedMaxCommute) ? storedMaxCommute : judgeConfig.maxCommute;
+      judgeConfig.maxWalk = Number.isFinite(storedMaxWalk) ? storedMaxWalk : judgeConfig.maxWalk;
+      judgeConfig.minLines = Number.isFinite(storedMinLines) ? storedMinLines : judgeConfig.minLines;
+      judgeConfig.priority = storedPriority;
+      judgePresetKey = storedPreset;
+    }
 
     maxCommuteEl.value = String(judgeConfig.maxCommute);
     maxWalkEl.value = String(judgeConfig.maxWalk);
     minLinesEl.value = String(judgeConfig.minLines);
     const p = priorityRadios.find((r) => r.value === judgeConfig.priority);
     if (p) p.checked = true;
+    const presetRadio = presetRadios.find((r) => r.value === judgePresetKey);
+    if (presetRadio) presetRadio.checked = true;
+    if (presetHintEl) {
+      const preset = JUDGE_PRESETS[judgePresetKey] || JUDGE_PRESETS.balanced;
+      presetHintEl.textContent = `Preset: ${preset.label} (${preset.maxCommute}m commute, ${preset.maxWalk}m walk, ${preset.minLines}+ lines).`;
+    }
 
     if (judgeUiBound) {
       renderJudgePanels();
@@ -2224,14 +2242,43 @@ async function main() {
       localStorage.setItem("atlas.judgeMaxWalk", String(judgeConfig.maxWalk));
       localStorage.setItem("atlas.judgeMinLines", String(judgeConfig.minLines));
       localStorage.setItem("atlas.judgePriority", judgeConfig.priority);
+      localStorage.setItem("atlas.judgePreset", judgePresetKey);
       judgeCacheKey = "";
       renderJudgePanels();
+    };
+
+    const applyPreset = (key) => {
+      const preset = JUDGE_PRESETS[key] || JUDGE_PRESETS.balanced;
+      judgePresetKey = key;
+      judgeConfig = { ...preset };
+      maxCommuteEl.value = String(judgeConfig.maxCommute);
+      maxWalkEl.value = String(judgeConfig.maxWalk);
+      minLinesEl.value = String(judgeConfig.minLines);
+      const pr = priorityRadios.find((r) => r.value === judgeConfig.priority);
+      if (pr) pr.checked = true;
+      if (presetHintEl) {
+        presetHintEl.textContent = `Preset: ${preset.label} (${preset.maxCommute}m commute, ${preset.maxWalk}m walk, ${preset.minLines}+ lines).`;
+      }
+      localStorage.setItem("atlas.judgeMaxCommute", String(judgeConfig.maxCommute));
+      localStorage.setItem("atlas.judgeMaxWalk", String(judgeConfig.maxWalk));
+      localStorage.setItem("atlas.judgeMinLines", String(judgeConfig.minLines));
+      localStorage.setItem("atlas.judgePriority", judgeConfig.priority);
+      localStorage.setItem("atlas.judgePreset", judgePresetKey);
+      judgeCacheKey = "";
+      renderJudgePanels();
+      restyle();
     };
 
     maxCommuteEl.addEventListener("change", update);
     maxWalkEl.addEventListener("change", update);
     minLinesEl.addEventListener("change", update);
     for (const r of priorityRadios) r.addEventListener("change", update);
+    for (const r of presetRadios) {
+      r.addEventListener("change", () => {
+        if (!r.checked) return;
+        applyPreset(r.value);
+      });
+    }
     renderJudgePanels();
   };
 
@@ -3270,18 +3317,19 @@ async function main() {
 
       path.setAttribute("fill", fill);
       path.setAttribute("fill-opacity", isOrigin || isDest || isHub ? "1" : String(fillOpacity));
-      path.setAttribute(
-        "stroke",
-        isOrigin
+      let stroke =
+        isOrigin || isHub || isDest
           ? "rgba(2,6,23,0.85)"
-          : isHub
-            ? "rgba(2,6,23,0.85)"
-            : isDest
-              ? "rgba(2,6,23,0.85)"
-              : showBase
-                ? baseStroke
-                : boroughStrokeForId(id),
-      );
+          : showBase
+            ? baseStroke
+            : boroughStrokeForId(id);
+      if (decideActive && decideStatus === "disqualified") {
+        const klass = judgeReasonClass(decideEntry?.reasons || []);
+        if (klass === "commute") stroke = "rgba(239, 68, 68, 0.9)";
+        if (klass === "walk") stroke = "rgba(249, 115, 22, 0.9)";
+        if (klass === "lines") stroke = "rgba(168, 85, 247, 0.9)";
+      }
+      path.setAttribute("stroke", stroke);
       path.setAttribute(
         "stroke-opacity",
         isOrigin || isDest || isHub ? "1" : showBase ? "0.9" : isDerived ? "0.35" : "0.85",
@@ -3941,6 +3989,15 @@ async function main() {
 
     const tipping = computeTipping(scored[0], scored[1], { ranges, weights });
     judgeResults = { recommended: scored, disqualified, tipping, ranges, weights };
+  };
+
+  const judgeReasonClass = (reasons = []) => {
+    if (!reasons?.length) return null;
+    const r = reasons[0] || "";
+    if (r.startsWith("Commute")) return "commute";
+    if (r.startsWith("Walk")) return "walk";
+    if (r.startsWith("Only")) return "lines";
+    return null;
   };
 
   const ensureJudgeResults = () => {

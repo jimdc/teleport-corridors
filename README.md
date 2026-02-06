@@ -25,7 +25,7 @@ When the map is set to **Cartogram**, neighborhood area is resized to encode the
 In the Teleportness view, bubble size represents **minutes saved** to the selected hub (larger = more teleport‑y).
 
 ### Judge Mode
-Judge Mode applies **hard thresholds** (commute, walk, line access), then ranks the Pareto‑optimal set. See `/docs/judge-mode.md` for details. The Decide map now highlights **recommended** vs **disqualified** neighborhoods directly.
+Judge Mode applies **hard thresholds** (commute, walk, line access), then ranks the Pareto‑optimal set. See `/docs/judge-mode.md` for details. The Decide map now highlights **recommended** vs **disqualified** neighborhoods directly, with presets for quick starting points.
 
 ## Live site
 [![Live site](https://img.shields.io/badge/Live%20site-jimdc.github.io%2Fteleport--corridors-4F46E5?style=flat&logo=github)](https://jimdc.github.io/teleport-corridors/)
