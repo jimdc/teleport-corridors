@@ -81,6 +81,79 @@
         </fieldset>
       </div>
     </header>
+    <div class="hub-bar">
+      <div class="hub-bar-inner">
+        <div id="livingTeleportControls" class="hub-bar-controls">
+          <div class="hub-bar-label">Hub: <span id="livingHubName" class="mono">Midtown</span></div>
+          <div class="hub-groups hub-groups-row" id="livingHubGroup">
+            <fieldset class="segmented compact" aria-label="Manhattan hubs">
+              <legend>Manhattan hubs</legend>
+              <label>
+                <input type="radio" name="livingHubPreset" value="midtown" checked />
+                <span><span class="boro-pill boro-manhattan">M</span> Midtown</span>
+              </label>
+              <label>
+                <input type="radio" name="livingHubPreset" value="downtown" />
+                <span><span class="boro-pill boro-manhattan">M</span> Downtown</span>
+              </label>
+              <label>
+                <input type="radio" name="livingHubPreset" value="hudson_yards" />
+                <span><span class="boro-pill boro-manhattan">M</span> Hudson Yds</span>
+              </label>
+            </fieldset>
+
+            <fieldset class="segmented compact" aria-label="Brooklyn hubs">
+              <legend>Brooklyn hubs</legend>
+              <label>
+                <input type="radio" name="livingHubPreset" value="williamsburg" />
+                <span><span class="boro-pill boro-brooklyn">Bk</span> W'burg</span>
+              </label>
+              <label>
+                <input type="radio" name="livingHubPreset" value="downtown_bk" />
+                <span><span class="boro-pill boro-brooklyn">Bk</span> Dt BK</span>
+              </label>
+              <label>
+                <input type="radio" name="livingHubPreset" value="greenpoint" />
+                <span><span class="boro-pill boro-brooklyn">Bk</span> Greenpoint</span>
+              </label>
+              <label>
+                <input type="radio" name="livingHubPreset" value="bushwick" />
+                <span><span class="boro-pill boro-brooklyn">Bk</span> Bushwick</span>
+              </label>
+            </fieldset>
+
+            <fieldset class="segmented compact" aria-label="Queens hubs">
+              <legend>Queens hubs</legend>
+              <label>
+                <input type="radio" name="livingHubPreset" value="lic" />
+                <span><span class="boro-pill boro-queens">Q</span> LIC</span>
+              </label>
+              <label>
+                <input type="radio" name="livingHubPreset" value="astoria" />
+                <span><span class="boro-pill boro-queens">Q</span> Astoria</span>
+              </label>
+            </fieldset>
+
+            <fieldset id="livingUserHubGroup" class="segmented compact user-hub-group" aria-label="User hub" hidden>
+              <legend>User hub</legend>
+              <label>
+                <input type="radio" name="livingHubPreset" value="user" />
+                <span class="hub-chip-label">
+                  <span id="livingUserHubPill" class="boro-pill">U</span>
+                  <span id="livingUserHubName">User hub</span>
+                  <span class="hub-badge">User hub</span>
+                </span>
+              </label>
+            </fieldset>
+          </div>
+
+          <label class="hub-bar-custom">
+            Choose your own hub
+            <select id="livingHubCustom"></select>
+          </label>
+        </div>
+      </div>
+    </div>
 
     <main>
       <div id="map">
@@ -99,76 +172,8 @@
             Tools for spotting outer-borough neighborhoods that “look far” on a map but feel close by subway.
           </div>
 
-          <div id="livingTeleportControls" class="panel-controls" style="margin-top:10px;">
-            <div class="panel-hint">Hub: <span id="livingHubName" class="mono">Midtown</span></div>
-            <div class="hub-groups" id="livingHubGroup" style="margin-top:6px;">
-              <fieldset class="segmented compact" aria-label="Manhattan hubs">
-                <legend>Manhattan hubs</legend>
-                <label>
-                  <input type="radio" name="livingHubPreset" value="midtown" checked />
-                  <span><span class="boro-pill boro-manhattan">M</span> Midtown</span>
-                </label>
-                <label>
-                  <input type="radio" name="livingHubPreset" value="downtown" />
-                  <span><span class="boro-pill boro-manhattan">M</span> Downtown</span>
-                </label>
-                <label>
-                  <input type="radio" name="livingHubPreset" value="hudson_yards" />
-                  <span><span class="boro-pill boro-manhattan">M</span> Hudson Yds</span>
-                </label>
-              </fieldset>
-
-              <fieldset class="segmented compact" aria-label="Brooklyn hubs">
-                <legend>Brooklyn hubs</legend>
-                <label>
-                  <input type="radio" name="livingHubPreset" value="williamsburg" />
-                  <span><span class="boro-pill boro-brooklyn">Bk</span> W'burg</span>
-                </label>
-                <label>
-                  <input type="radio" name="livingHubPreset" value="downtown_bk" />
-                  <span><span class="boro-pill boro-brooklyn">Bk</span> Dt BK</span>
-                </label>
-                <label>
-                  <input type="radio" name="livingHubPreset" value="greenpoint" />
-                  <span><span class="boro-pill boro-brooklyn">Bk</span> Greenpoint</span>
-                </label>
-                <label>
-                  <input type="radio" name="livingHubPreset" value="bushwick" />
-                  <span><span class="boro-pill boro-brooklyn">Bk</span> Bushwick</span>
-                </label>
-              </fieldset>
-
-              <fieldset class="segmented compact" aria-label="Queens hubs">
-                <legend>Queens hubs</legend>
-                <label>
-                  <input type="radio" name="livingHubPreset" value="lic" />
-                  <span><span class="boro-pill boro-queens">Q</span> LIC</span>
-                </label>
-                <label>
-                  <input type="radio" name="livingHubPreset" value="astoria" />
-                  <span><span class="boro-pill boro-queens">Q</span> Astoria</span>
-                </label>
-              </fieldset>
-
-              <fieldset id="livingUserHubGroup" class="segmented compact user-hub-group" aria-label="User hub" hidden>
-                <legend>User hub</legend>
-                <label>
-                  <input type="radio" name="livingHubPreset" value="user" />
-                  <span class="hub-chip-label">
-                    <span id="livingUserHubPill" class="boro-pill">U</span>
-                    <span id="livingUserHubName">User hub</span>
-                    <span class="hub-badge">User hub</span>
-                  </span>
-                </label>
-              </fieldset>
-            </div>
-
-            <label style="margin-top:8px;">
-              Choose your own hub
-              <select id="livingHubCustom"></select>
-            </label>
-
-            <label class="toggle compact" style="margin-top:6px;">
+          <div class="panel-controls" style="margin-top:10px;">
+            <label class="toggle compact">
               <input id="livingExcludeShort" type="checkbox" checked />
               <span>Prefer longer trips (exclude &lt;6km)</span>
             </label>

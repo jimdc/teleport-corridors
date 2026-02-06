@@ -78,6 +78,77 @@
         </fieldset>
       </div>
     </header>
+    <div class="hub-bar">
+      <div class="hub-bar-inner">
+        <div id="hubControls" class="hub-bar-controls">
+          <div class="hub-bar-label">Hub: <span id="centralityHubName" class="mono">Midtown</span></div>
+          <div class="hub-groups hub-groups-row" id="centralityHubGroup">
+            <fieldset class="segmented compact" aria-label="Manhattan hubs">
+              <legend>Manhattan hubs</legend>
+              <label>
+                <input type="radio" name="centralityHubPreset" value="midtown" checked />
+                <span><span class="boro-pill boro-manhattan">M</span> Midtown</span>
+              </label>
+              <label>
+                <input type="radio" name="centralityHubPreset" value="downtown" />
+                <span><span class="boro-pill boro-manhattan">M</span> Downtown</span>
+              </label>
+              <label>
+                <input type="radio" name="centralityHubPreset" value="hudson_yards" />
+                <span><span class="boro-pill boro-manhattan">M</span> Hudson Yds</span>
+              </label>
+            </fieldset>
+
+            <fieldset class="segmented compact" aria-label="Brooklyn hubs">
+              <legend>Brooklyn hubs</legend>
+              <label>
+                <input type="radio" name="centralityHubPreset" value="williamsburg" />
+                <span><span class="boro-pill boro-brooklyn">Bk</span> W'burg</span>
+              </label>
+              <label>
+                <input type="radio" name="centralityHubPreset" value="downtown_bk" />
+                <span><span class="boro-pill boro-brooklyn">Bk</span> Dt BK</span>
+              </label>
+              <label>
+                <input type="radio" name="centralityHubPreset" value="greenpoint" />
+                <span><span class="boro-pill boro-brooklyn">Bk</span> Greenpoint</span>
+              </label>
+              <label>
+                <input type="radio" name="centralityHubPreset" value="bushwick" />
+                <span><span class="boro-pill boro-brooklyn">Bk</span> Bushwick</span>
+              </label>
+            </fieldset>
+
+            <fieldset class="segmented compact" aria-label="Queens hubs">
+              <legend>Queens hubs</legend>
+              <label>
+                <input type="radio" name="centralityHubPreset" value="lic" />
+                <span><span class="boro-pill boro-queens">Q</span> LIC</span>
+              </label>
+              <label>
+                <input type="radio" name="centralityHubPreset" value="astoria" />
+                <span><span class="boro-pill boro-queens">Q</span> Astoria</span>
+              </label>
+            </fieldset>
+            <fieldset id="centralityUserHubGroup" class="segmented compact user-hub-group" aria-label="User hub" hidden>
+              <legend>User hub</legend>
+              <label>
+                <input type="radio" name="centralityHubPreset" value="user" />
+                <span class="hub-chip-label">
+                  <span id="centralityUserHubPill" class="boro-pill">U</span>
+                  <span id="centralityUserHubName">User hub</span>
+                  <span class="hub-badge">User hub</span>
+                </span>
+              </label>
+            </fieldset>
+          </div>
+          <label class="hub-bar-custom">
+            Choose your own hub
+            <select id="centralityHubCustom"></select>
+          </label>
+        </div>
+      </div>
+    </div>
 
     <main>
       <div id="map">
@@ -92,73 +163,6 @@
         <div id="judgePanel" class="panel-section">
           <div class="panel-title">Decide</div>
           <div class="panel-hint">Set hard limits, then we recommend and disqualify.</div>
-          <div id="hubControls" class="panel-controls" style="margin-top:8px;">
-            <div class="panel-hint">Hub: <span id="centralityHubName" class="mono">Midtown</span></div>
-            <div class="hub-groups" id="centralityHubGroup" style="margin-top:6px;">
-              <fieldset class="segmented compact" aria-label="Manhattan hubs">
-                <legend>Manhattan hubs</legend>
-                <label>
-                  <input type="radio" name="centralityHubPreset" value="midtown" checked />
-                  <span><span class="boro-pill boro-manhattan">M</span> Midtown</span>
-                </label>
-                <label>
-                  <input type="radio" name="centralityHubPreset" value="downtown" />
-                  <span><span class="boro-pill boro-manhattan">M</span> Downtown</span>
-                </label>
-                <label>
-                  <input type="radio" name="centralityHubPreset" value="hudson_yards" />
-                  <span><span class="boro-pill boro-manhattan">M</span> Hudson Yds</span>
-                </label>
-              </fieldset>
-
-              <fieldset class="segmented compact" aria-label="Brooklyn hubs">
-                <legend>Brooklyn hubs</legend>
-                <label>
-                  <input type="radio" name="centralityHubPreset" value="williamsburg" />
-                  <span><span class="boro-pill boro-brooklyn">Bk</span> W'burg</span>
-                </label>
-                <label>
-                  <input type="radio" name="centralityHubPreset" value="downtown_bk" />
-                  <span><span class="boro-pill boro-brooklyn">Bk</span> Dt BK</span>
-                </label>
-                <label>
-                  <input type="radio" name="centralityHubPreset" value="greenpoint" />
-                  <span><span class="boro-pill boro-brooklyn">Bk</span> Greenpoint</span>
-                </label>
-                <label>
-                  <input type="radio" name="centralityHubPreset" value="bushwick" />
-                  <span><span class="boro-pill boro-brooklyn">Bk</span> Bushwick</span>
-                </label>
-              </fieldset>
-
-              <fieldset class="segmented compact" aria-label="Queens hubs">
-                <legend>Queens hubs</legend>
-                <label>
-                  <input type="radio" name="centralityHubPreset" value="lic" />
-                  <span><span class="boro-pill boro-queens">Q</span> LIC</span>
-                </label>
-                <label>
-                  <input type="radio" name="centralityHubPreset" value="astoria" />
-                  <span><span class="boro-pill boro-queens">Q</span> Astoria</span>
-                </label>
-              </fieldset>
-              <fieldset id="centralityUserHubGroup" class="segmented compact user-hub-group" aria-label="User hub" hidden>
-                <legend>User hub</legend>
-                <label>
-                  <input type="radio" name="centralityHubPreset" value="user" />
-                  <span class="hub-chip-label">
-                    <span id="centralityUserHubPill" class="boro-pill">U</span>
-                    <span id="centralityUserHubName">User hub</span>
-                    <span class="hub-badge">User hub</span>
-                  </span>
-                </label>
-              </fieldset>
-            </div>
-            <label style="margin-top:8px;">
-              Choose your own hub
-              <select id="centralityHubCustom"></select>
-            </label>
-          </div>
           <div class="panel-hint" style="margin-top:8px;">Presets</div>
           <div id="judgePresetButtons" class="segmented compact judge-presets" aria-label="Decision presets">
             <label>

@@ -2245,6 +2245,7 @@ async function main() {
       localStorage.setItem("atlas.judgePreset", judgePresetKey);
       judgeCacheKey = "";
       renderJudgePanels();
+      restyle();
     };
 
     const applyPreset = (key) => {
