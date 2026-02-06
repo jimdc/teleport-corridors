@@ -17,6 +17,7 @@
 - **Derived neighborhoods**: Station-partitioned regions with StreetEasy-style naming and confidence.
 - **Abbreviate**: Shortens long neighborhood names to reduce label clutter.
 - **Judge Mode**: Hard thresholds + ranked recommendations with explicit disqualifications.
+- **Hub bar**: Hub selection lives in a dedicated strip under the nav on Decide/Centrality/Teleportness.
 
 ### Cartogram “resize by”
 When the map is set to **Cartogram**, neighborhood area is resized to encode the selected metric (Population, Housing Units, Jobs). The dropdown only lists scalar metrics (not reachability). In Geographic mode the dropdown is disabled because geometry is not rescaled.
