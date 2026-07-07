@@ -124,3 +124,26 @@ No CLI entrypoint, no API, no MCP tools. The build scripts are dev-only tooling.
 - **Feeds / consumed by:** nothing in the estate; standalone project.
 - Tests: `tests/test_build_matrix.py`, `tests/test_build_derived.py`
   (pytest), `tests/test_judge.mjs` (Node). Fixtures in `tests/fixtures/`.
+
+## TL;DR
+
+4 Python pipeline scripts, 3 transit-time matrix profiles (weekday AM/PM, weekend), 1 local port (8000), no launchd units, hard rule: no per-user server-side state and no localStorage — all precompiled data is committed to the repo.
+
+1. `download_inputs.py` fetches MTA GTFS zip and NYC Open Data neighborhoods GeoJSON into `data/raw/`.
+2. `build_matrix.py` parses GTFS stops/trips/stop_times, builds a stop graph, and runs Dijkstra to produce NxN transit-minutes matrices for 3 profiles (weekday AM, weekday PM, weekend).
+3. `build_matrix.py` also computes hub corridors, harmonic centrality, and median minutes, emitting JSON files to `site/data/`.
+4. `build_derived.py` assigns micro-units to the nearest station via haversine Voronoi and names them using the gazetteer.
+5. `build_derived.py` computes derived matrices and teleportness scores, emitting GeoJSON and JSON to `site/data/`.
+6. Locally, `run_local.py` (invoked via `buildandrun.sh`) runs the two build scripts in order, then starts `python3 -m http.server` on port 8000 serving `site/`.
+7. On push to `main`, GitHub Actions (`.github/workflows/pages.yml`) deploys `site/` to GitHub Pages at `https://jimdc.github.io/teleport-corridors/`.
+
+## Check yourself
+
+**Q:** What port does the local dev server use, and what directory does it serve?
+**A:** Port 8000, serving the `site/` directory via `python3 -m http.server`.
+
+**Q:** `build_matrix.py` crashes mid-run — what does `build_derived.py` consume and what does the browser serve?
+**A:** `build_derived.py` would run against whatever partial or stale output `build_matrix.py` left in `site/data/`; the browser app continues to serve the last committed precompiled data in `site/data/` until a clean build is committed.
+
+**Q:** What is the hard rule about user state in this project?
+**A:** There is no per-user server-side state, and the browser holds no localStorage — all data is derived from precompiled static files committed to the repo.
