@@ -18,6 +18,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     builder = repo_root / "tools" / "build_matrix.py"
     derived_builder = repo_root / "tools" / "build_derived.py"
+    shard_builder = repo_root / "tools" / "build_shards.py"
     out_dir = repo_root / "site" / "data"
 
     # Friendly hint for the common case.
@@ -97,6 +98,15 @@ def main() -> int:
                 str(out_dir),
             ]
         )
+
+    subprocess.check_call(
+        [
+            sys.executable,
+            str(shard_builder),
+            "--out",
+            str(out_dir),
+        ]
+    )
 
     site_dir = repo_root / "site"
     handler = lambda *a, **kw: SimpleHTTPRequestHandler(*a, directory=str(site_dir), **kw)

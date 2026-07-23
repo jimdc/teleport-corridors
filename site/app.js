@@ -1,4 +1,5 @@
 import { paretoFront, scoreItems, evaluateThresholds, computeTipping } from "./judge_core.js";
+import { loadMatrixBinary, loadShard } from "./data-store.js";
 
 const DATA_DIR = "./data";
 const ISOCHRONE_MINUTES = [15, 30, 45, 60, 90, 120, 150, 180];
@@ -1372,9 +1373,10 @@ async function main() {
   stops = [];
   edges = [];
   let adjacency = [];
-  let minutesMatrix = null; // neighborhood x neighborhood minutes (filtered to visible set)
+  let matrixValues = null; // flat Int16: minutes plane, then first-route plane
+  let matrixIndex = null;
+  let matrixRowIndices = []; // visible neighborhood index -> binary matrix row
   let matrixRoutes = []; // routes referenced by matrix.first_route (filtered)
-  let firstRouteMatrix = null; // neighborhood x neighborhood first-route indices (filtered)
   let centralityConfig = null; // matrix centrality payload (filtered)
   let scalarValuesByKey = new Map();
   let cartogramScalarKey = DEFAULT_SCALAR_KEY;
@@ -1428,6 +1430,21 @@ async function main() {
   let judgeResults = { recommended: [], disqualified: [], tipping: null };
   let judgeCacheKey = "";
   let judgePresetKey = "balanced";
+  let activeJudgeShard = null;
+
+  const hasMatrix = () => !!matrixValues && !!matrixIndex && matrixRowIndices.length > 0;
+  const matrixValueAt = (visibleRow, visibleColumn, planeOffset = 0) => {
+    if (!hasMatrix()) return null;
+    const sourceRow = matrixRowIndices[visibleRow];
+    const sourceColumn = matrixRowIndices[visibleColumn];
+    if (sourceRow == null || sourceColumn == null) return null;
+    const size = Number(matrixIndex.size);
+    const value = matrixValues[planeOffset + sourceRow * size + sourceColumn];
+    return value === Number(matrixIndex.null) ? null : Number(value);
+  };
+  const minutesAt = (row, column) => matrixValueAt(row, column, Number(matrixIndex?.minutes_offset || 0));
+  const firstRouteAt = (row, column) =>
+    matrixValueAt(row, column, Number(matrixIndex?.first_route_offset || 0));
 
   // Views mode: scalar surfaces (population, density, reachable population/jobs).
   let viewsMetricKey = "population";
@@ -1459,15 +1476,6 @@ async function main() {
       derivedScalars = null;
     }
     return derivedGeo;
-  };
-
-  const checkDerivedAvailable = async () => {
-    try {
-      const res = await fetch(`${DATA_DIR}/derived_regions.geojson`, { method: "HEAD" });
-      return res.ok;
-    } catch (err) {
-      return false;
-    }
   };
 
   const applyBaseUnit = async () => {
@@ -1608,19 +1616,20 @@ async function main() {
 
   const loadMatrix = async (profile) => {
     const unitSuffix = getBaseUnit() === "derived" ? "_derived" : "";
+    const unit = unitSuffix ? "derived" : "tract";
     let graph;
     let matrix;
     try {
       [graph, matrix] = await Promise.all([
         fetchJson(`${DATA_DIR}/graph_${profile}${unitSuffix}.json`),
-        fetchJson(`${DATA_DIR}/matrix_${profile}${unitSuffix}.json`),
+        loadMatrixBinary({ unit, profile }),
       ]);
     } catch (err) {
       if (unitSuffix) {
         // Fallback to tracts if derived data is missing.
         const [g, m] = await Promise.all([
           fetchJson(`${DATA_DIR}/graph_${profile}.json`),
-          fetchJson(`${DATA_DIR}/matrix_${profile}.json`),
+          loadMatrixBinary({ unit: "tract", profile }),
         ]);
         graph = g;
         matrix = m;
@@ -1635,12 +1644,14 @@ async function main() {
     }
     const allNeighborhoods = graph.neighborhoods || [];
     const keptNeighborhoods = [];
-    const keptOrigIdx = [];
+    const keptMatrixRows = [];
     for (let i = 0; i < allNeighborhoods.length; i++) {
       const n = allNeighborhoods[i];
       if (!visibleIds.has(String(n?.id))) continue;
+      const matrixRow = matrix?.index?.row_by_id?.[String(n?.id)];
+      if (matrixRow == null) continue;
       keptNeighborhoods.push(n);
-      keptOrigIdx.push(i);
+      keptMatrixRows.push(Number(matrixRow));
     }
     neighborhoods = keptNeighborhoods;
     routes = graph.routes || [];
@@ -1648,36 +1659,13 @@ async function main() {
     edges = graph.edges || [];
     computeWalkLineMetrics();
 
-    const allMinutes = matrix?.minutes || null;
-    if (Array.isArray(allMinutes) && keptOrigIdx.length) {
-      const sub = [];
-      for (const i of keptOrigIdx) {
-        const row = allMinutes[i];
-        if (!Array.isArray(row)) continue;
-        sub.push(keptOrigIdx.map((j) => (j < row.length ? row[j] : null)));
-      }
-      minutesMatrix = sub.length === keptOrigIdx.length ? sub : null;
-    } else {
-      minutesMatrix = null;
-    }
-
-    matrixRoutes = Array.isArray(matrix?.routes) ? matrix.routes : [];
-
-    const allFirst = matrix?.first_route || null;
-    if (Array.isArray(allFirst) && keptOrigIdx.length) {
-      const sub = [];
-      for (const i of keptOrigIdx) {
-        const row = allFirst[i];
-        if (!Array.isArray(row)) continue;
-        sub.push(keptOrigIdx.map((j) => (j < row.length ? row[j] : null)));
-      }
-      firstRouteMatrix = sub.length === keptOrigIdx.length ? sub : null;
-    } else {
-      firstRouteMatrix = null;
-    }
+    matrixIndex = matrix?.index || null;
+    matrixValues = matrix?.values || null;
+    matrixRowIndices = keptMatrixRows;
+    matrixRoutes = Array.isArray(matrixIndex?.routes) ? matrixIndex.routes : [];
 
     // Filter centrality metrics to the visible neighborhood set.
-    const c = matrix?.centrality || {};
+    const c = matrixIndex?.centrality || {};
     const metrics = c?.metrics || null;
     if (metrics && typeof metrics === "object") {
       centralityConfig = { ...c, metrics: {} };
@@ -1687,7 +1675,7 @@ async function main() {
           label: v?.label || k,
           higher_is_better: !!v?.higher_is_better,
           transfer_penalty_minutes: v?.transfer_penalty_minutes,
-          scores: keptOrigIdx.map((i) => (i < scores.length ? scores[i] : null)),
+          scores: keptMatrixRows.map((i) => (i < scores.length ? scores[i] : null)),
         };
       }
     } else {
@@ -1699,7 +1687,7 @@ async function main() {
           harmonic: {
             label: c?.metric || "harmonic",
             higher_is_better: true,
-            scores: keptOrigIdx.map((i) => (i < scores.length ? scores[i] : null)),
+            scores: keptMatrixRows.map((i) => (i < scores.length ? scores[i] : null)),
           },
         },
       };
@@ -1999,11 +1987,16 @@ async function main() {
     }
   };
 
-  const applyHubCentrality = () => {
-    if (!minutesMatrix || !hubCentralityHubId) return;
+  const applyHubCentrality = (shard = null) => {
+    if (!hasMatrix() || !hubCentralityHubId) return;
     const hubIdx = indexById().get(String(hubCentralityHubId));
     if (hubIdx == null) return;
-    const scores = minutesMatrix.map((row) => (Array.isArray(row) ? row[hubIdx] : null));
+    const shardMinutes = shard?.items
+      ? new Map(shard.items.map((item) => [String(item.id), item.minutes ?? item.commute ?? null]))
+      : null;
+    const scores = neighborhoods.map((neighborhood, row) =>
+      shardMinutes ? shardMinutes.get(String(neighborhood.id)) ?? null : minutesAt(row, hubIdx),
+    );
     // Lower minutes is better; invert for visual mapping.
     setCentralityFromScores({
       label: `To hub: ${hubCentralityHubLabel}`,
@@ -2016,8 +2009,9 @@ async function main() {
   let centralityUiBound = false;
   let centralityApplyUi = () => {};
   let centralityPresetIdByKey = new Map();
+  let centralityRequestId = 0;
 
-  const setupCentralityUi = () => {
+  const setupCentralityUi = async () => {
     if (!isCentralityPage && !isDecidePage) return;
     const metricRadios = Array.from(document.querySelectorAll('input[name="centralityMetric"]'));
     const hubPresetRadios = Array.from(document.querySelectorAll('input[name="centralityHubPreset"]'));
@@ -2094,7 +2088,8 @@ async function main() {
       updateUserHubChip(custom);
     };
 
-    centralityApplyUi = () => {
+    centralityApplyUi = async () => {
+      const requestId = ++centralityRequestId;
       const metric = metricRadios.find((r) => r.checked)?.value || "hub";
       centralityMetricKey = metric;
       if (hubControlsEl) {
@@ -2120,7 +2115,23 @@ async function main() {
         if (hubNameEl) hubNameEl.textContent = hubCentralityHubLabel;
         updateUserHubChip(customId);
         judgeCacheKey = "";
-        applyHubCentrality();
+        let shard = null;
+        if (!useCustom) {
+          const shardMetric = isDecidePage ? "judge" : "centrality";
+          try {
+            shard = await loadShard({
+              unit: getBaseUnit(),
+              profile: getProfile(),
+              hub: presetKey,
+              metric: shardMetric,
+            });
+          } catch (error) {
+            console.warn("Hub shard unavailable; using binary matrix fallback.", error);
+          }
+        }
+        if (requestId !== centralityRequestId) return;
+        activeJudgeShard = isDecidePage ? shard : null;
+        applyHubCentrality(shard);
       } else {
         const metricKey = metric;
         const mm = centralityConfig?.metrics?.[metricKey];
@@ -2142,14 +2153,14 @@ async function main() {
     };
 
     loadUiPrefs();
-    centralityApplyUi();
+    await centralityApplyUi();
 
     if (!centralityUiBound) {
       centralityUiBound = true;
       for (const r of metricRadios) {
         r.addEventListener("change", () => {
           localStorage.setItem("atlas.centralityMetric", r.value);
-          centralityApplyUi();
+          void centralityApplyUi();
         });
       }
       for (const r of hubPresetRadios) {
@@ -2161,7 +2172,7 @@ async function main() {
             localStorage.setItem("atlas.centralityHubCustom", "");
           }
           updateUserHubChip("");
-          centralityApplyUi();
+          void centralityApplyUi();
         });
       }
       hubCustomEl?.addEventListener("change", () => {
@@ -2180,7 +2191,7 @@ async function main() {
           }
         }
         updateUserHubChip(val);
-        centralityApplyUi();
+        void centralityApplyUi();
       });
     }
   };
@@ -2289,13 +2300,13 @@ async function main() {
     return `${sign}${Math.abs(v).toFixed(1)} min`;
   };
 
-  const applyLivingMetric = () => {
+  const applyLivingMetric = (shard = null) => {
     const rawScores = new Array(neighborhoods.length).fill(null);
     const details = new Map();
 
     // Teleportness: minutes saved vs baseline speed to the selected hub.
     const hubId = livingHubId ? String(livingHubId) : null;
-    if (!hubId || !minutesMatrix) {
+    if (!hubId || !hasMatrix()) {
       setLivingFromRawScores({
         label: "Teleportness",
         higherIsBetter: true,
@@ -2312,6 +2323,30 @@ async function main() {
     if (hubIdx == null || !Array.isArray(hubC) || hubC.length < 2) return;
 
     const maxMinutes = getMaxMinutes();
+    if (shard?.items) {
+      const index = indexById();
+      for (const item of shard.items) {
+        const row = index.get(String(item.id));
+        if (row == null || item.minutes == null || item.minutes > maxMinutes) continue;
+        if (livingExcludeShortTrips && item.distance_km < 6) continue;
+        rawScores[row] = item.minutes_saved;
+        details.set(String(item.id), {
+          metric: "teleportness",
+          hub_id: hubId,
+          hub_name: hubNb?.name || hubId,
+          ...item,
+        });
+      }
+      setLivingFromRawScores({
+        label: `Teleportness to ${livingHubLabel || "hub"}`,
+        higherIsBetter: true,
+        rawScoresByIndex: rawScores,
+        colorKey: "teleportness",
+        detailsById: details,
+      });
+      return;
+    }
+
     for (let i = 0; i < neighborhoods.length; i++) {
       if (i === hubIdx) continue;
       const n = neighborhoods[i];
@@ -2319,7 +2354,7 @@ async function main() {
       const c = n?.centroid;
       if (!Array.isArray(c) || c.length < 2) continue;
 
-      const mins = minutesMatrix?.[i]?.[hubIdx] ?? null;
+      const mins = minutesAt(i, hubIdx);
       if (mins == null || !Number.isFinite(mins) || mins <= 0 || mins > maxMinutes) continue;
 
       const dKm = haversineKm(c, hubC);
@@ -2331,7 +2366,7 @@ async function main() {
 
       rawScores[i] = Math.round(saved * 10) / 10;
 
-      const ridx = firstRouteMatrix?.[i]?.[hubIdx] ?? null;
+      const ridx = firstRouteAt(i, hubIdx);
       const r = ridx != null && ridx >= 0 && ridx < matrixRoutes.length ? matrixRoutes[ridx] : null;
       const firstLine = r?.short_name || r?.id || null;
 
@@ -2364,7 +2399,7 @@ async function main() {
       const map = scalarValuesByKey.get(scalarKey);
       if (!map || map.size === 0) return false;
     }
-    if (metric.type === "reachable" && !minutesMatrix) return false;
+    if (metric.type === "reachable" && !hasMatrix()) return false;
     return true;
   };
 
@@ -2387,17 +2422,15 @@ async function main() {
     if (viewsReachableCache.has(cacheKey)) return viewsReachableCache.get(cacheKey);
     const result = new Map();
     const scalarMap = scalarValuesByKey.get(scalarKey) || new Map();
-    if (!minutesMatrix || !neighborhoods.length) {
+    if (!hasMatrix() || !neighborhoods.length) {
       viewsReachableCache.set(cacheKey, result);
       return result;
     }
     const ids = neighborhoods.map((n) => String(n.id));
     for (let i = 0; i < ids.length; i++) {
-      const row = minutesMatrix[i];
-      if (!Array.isArray(row)) continue;
       let sum = 0;
       for (let j = 0; j < ids.length; j++) {
-        const mins = row[j];
+        const mins = minutesAt(i, j);
         if (mins == null || !Number.isFinite(mins) || mins > threshold) continue;
         const v = scalarMap.get(ids[j]);
         if (v != null && Number.isFinite(v)) sum += v;
@@ -2550,8 +2583,9 @@ async function main() {
   let livingUiBound = false;
   let livingApplyUi = () => {};
   let livingPresetIdByKey = new Map();
+  let livingRequestId = 0;
 
-  const setupLivingUi = () => {
+  const setupLivingUi = async () => {
     if (!isLivingPage) return;
     const metricRadios = Array.from(document.querySelectorAll('input[name="livingMetric"]'));
     const hubPresetRadios = Array.from(document.querySelectorAll('input[name="livingHubPreset"]'));
@@ -2635,14 +2669,15 @@ async function main() {
       if (excludeShortEl) excludeShortEl.checked = ex == null ? true : ex === "1";
     };
 
-    livingApplyUi = () => {
+    livingApplyUi = async () => {
+      const requestId = ++livingRequestId;
       livingMetricKey = "teleportness";
       if (hubControlsEl) hubControlsEl.hidden = false;
 
-        let presetKey = hubPresetRadios.find((r) => r.checked)?.value || "midtown";
-        if (presetKey === "user" && !hubCustomEl?.value) presetKey = "midtown";
-        const presetMeta = presetHubs.find((h) => h.key === presetKey);
-        const presetId = livingPresetIdByKey.get(presetKey) || null;
+      let presetKey = hubPresetRadios.find((r) => r.checked)?.value || "midtown";
+      if (presetKey === "user" && !hubCustomEl?.value) presetKey = "midtown";
+      const presetMeta = presetHubs.find((h) => h.key === presetKey);
+      const presetId = livingPresetIdByKey.get(presetKey) || null;
       const customId = hubCustomEl?.value ? String(hubCustomEl.value) : "";
       const useCustom = presetKey === "user" && customId;
       const useId = useCustom ? customId : presetId || null;
@@ -2656,7 +2691,21 @@ async function main() {
       if (hubNameEl) hubNameEl.textContent = livingHubLabel;
       livingExcludeShortTrips = !!excludeShortEl?.checked;
 
-      applyLivingMetric();
+      let shard = null;
+      if (!useCustom) {
+        try {
+          shard = await loadShard({
+            unit: getBaseUnit(),
+            profile: getProfile(),
+            hub: presetKey,
+            metric: "teleportness",
+          });
+        } catch (error) {
+          console.warn("Teleportness shard unavailable; using binary matrix fallback.", error);
+        }
+      }
+      if (requestId !== livingRequestId) return;
+      applyLivingMetric(shard);
       restyle();
       renderLabels();
       renderLivingPanel();
@@ -2664,7 +2713,7 @@ async function main() {
     };
 
     loadUiPrefs();
-    livingApplyUi();
+    await livingApplyUi();
 
     if (!livingUiBound) {
       livingUiBound = true;
@@ -2672,7 +2721,7 @@ async function main() {
       for (const r of metricRadios) {
         r.addEventListener("change", () => {
           localStorage.setItem("atlas.livingMetric", r.value);
-          livingApplyUi();
+          void livingApplyUi();
         });
       }
 
@@ -2684,7 +2733,7 @@ async function main() {
             localStorage.setItem("atlas.livingHubCustom", "");
           }
           updateUserHubChip("");
-          livingApplyUi();
+          void livingApplyUi();
         });
       }
 
@@ -2704,12 +2753,12 @@ async function main() {
           }
         }
         updateUserHubChip(val);
-        livingApplyUi();
+        void livingApplyUi();
       });
 
       excludeShortEl?.addEventListener("change", () => {
         localStorage.setItem("atlas.livingExcludeShort", excludeShortEl.checked ? "1" : "0");
-        livingApplyUi();
+        void livingApplyUi();
       });
     }
   };
@@ -2824,7 +2873,7 @@ async function main() {
 
   let hubSpokeCache = new Map();
   const getHubSpokeData = (hubId) => {
-    if (!hubId || !minutesMatrix) return [];
+    if (!hubId || !hasMatrix()) return [];
     const key = `${getProfile()}|${hubId}|${getMaxMinutes()}`;
     if (hubSpokeCache.has(key)) return hubSpokeCache.get(key) || [];
 
@@ -2839,14 +2888,14 @@ async function main() {
       if (i === hubIdx) continue;
       const n = neighborhoods[i];
       const id = String(n.id);
-      const mins = minutesMatrix?.[i]?.[hubIdx] ?? null;
+      const mins = minutesAt(i, hubIdx);
       if (mins == null || !Number.isFinite(mins) || mins <= 0 || mins > maxMinutes) continue;
       const c = n?.centroid;
       if (!Array.isArray(c) || c.length < 2) continue;
       const distKm = haversineKm(c, hubC);
       const expected = Number.isFinite(distKm) ? distKm / TELEPORT_EXPECTED_SPEED_KM_PER_MIN : null;
       const minutesSaved = expected != null ? expected - mins : null;
-      const ridx = firstRouteMatrix?.[i]?.[hubIdx] ?? null;
+      const ridx = firstRouteAt(i, hubIdx);
       const route = ridx != null ? matrixRoutes?.[ridx] || routes?.[ridx] : null;
       const line = route?.short_name || route?.id || null;
       out.push({
@@ -3936,18 +3985,38 @@ async function main() {
     judgeById = new Map();
     judgeResults = { recommended: [], disqualified: [], tipping: null };
 
-    if (!minutesMatrix?.length || (!isDecidePage && centralityMetricKey !== "hub") || !hubCentralityHubId) return;
+    if (!hasMatrix() || (!isDecidePage && centralityMetricKey !== "hub") || !hubCentralityHubId) return;
     const hubIdx = indexById().get(String(hubCentralityHubId));
     if (hubIdx == null) return;
+
+    const shardMatches =
+      activeJudgeShard?.hub?.id != null &&
+      String(activeJudgeShard.hub.id) === String(hubCentralityHubId) &&
+      activeJudgeShard.profile === getProfile() &&
+      activeJudgeShard.unit === getBaseUnit();
+    const shardItems = shardMatches
+      ? new Map((activeJudgeShard.items || []).map((item) => [String(item.id), item]))
+      : null;
+    const presetMatches = Object.entries(JUDGE_PRESETS).find(
+      ([, preset]) =>
+        preset.maxCommute === judgeConfig.maxCommute &&
+        preset.maxWalk === judgeConfig.maxWalk &&
+        preset.minLines === judgeConfig.minLines,
+    );
+    const precomputedDisqualified =
+      presetMatches && shardMatches
+        ? new Set(activeJudgeShard.disqualified?.[presetMatches[0]] || [])
+        : null;
 
     const recommended = [];
     const disqualified = [];
     for (let i = 0; i < neighborhoods.length; i++) {
       const n = neighborhoods[i];
       const id = String(n.id);
-      const commute = minutesMatrix?.[i]?.[hubIdx];
-      const walk = walkMinutesById.get(id);
-      const lines = lineCountById.get(id) ?? 0;
+      const shardItem = shardItems?.get(id);
+      const commute = shardItem?.commute ?? minutesAt(i, hubIdx);
+      const walk = shardItem?.walk ?? walkMinutesById.get(id);
+      const lines = shardItem?.lines ?? lineCountById.get(id) ?? 0;
 
       const reasons = evaluateThresholds({ commute, walk, lines }, judgeConfig);
       const entry = {
@@ -3960,7 +4029,8 @@ async function main() {
       };
       judgeById.set(id, entry);
 
-      if (reasons.length) {
+      const isDisqualified = precomputedDisqualified ? precomputedDisqualified.has(id) : reasons.length > 0;
+      if (isDisqualified) {
         let severity = 0;
         if (Number.isFinite(commute) && commute > judgeConfig.maxCommute) severity += commute - judgeConfig.maxCommute;
         if (Number.isFinite(walk) && walk > judgeConfig.maxWalk) severity += (walk - judgeConfig.maxWalk) * 1.5;
@@ -4337,25 +4407,12 @@ async function main() {
       availableScalarKeys = await loadScalarManifest();
       tractsGeo = await fetchJson(`${DATA_DIR}/neighborhoods.geojson`);
       tractsScalars = await attachScalars(tractsGeo?.features || []);
-      if (baseUnitRadios.length) {
-        const derivedRadio = baseUnitRadios.find((r) => r.value === "derived");
-        if (derivedRadio) {
-          const ok = await checkDerivedAvailable();
-          derivedRadio.disabled = !ok;
-          if (!ok && derivedRadio.checked) {
-            const fallback = baseUnitRadios.find((r) => r.value === "tract");
-            if (fallback) fallback.checked = true;
-            localStorage.setItem("atlas.baseUnit", "tract");
-            showError("Derived data missing. Run ./buildonly.sh to generate derived files.");
-          }
-        }
-      }
       await applyBaseUnit();
       await loadMatrix(getProfile());
       render();
-      setupCentralityUi();
+      await setupCentralityUi();
       setupJudgeUi();
-      setupLivingUi();
+      await setupLivingUi();
       setupCartogramUi();
       setupViewsUi();
     } catch (err) {
@@ -4372,9 +4429,9 @@ async function main() {
         await applyBaseUnit();
         await loadMatrix(getProfile());
         render();
-        setupCentralityUi();
+        await setupCentralityUi();
         setupJudgeUi();
-        setupLivingUi();
+        await setupLivingUi();
         setupCartogramUi();
         setupViewsUi();
       } catch (err) {
@@ -4400,9 +4457,9 @@ async function main() {
         await applyBaseUnit();
         await loadMatrix(getProfile());
         render();
-        setupCentralityUi();
+        await setupCentralityUi();
         setupJudgeUi();
-        setupLivingUi();
+        await setupLivingUi();
         setupCartogramUi();
         setupViewsUi();
       } catch (err) {

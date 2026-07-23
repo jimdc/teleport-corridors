@@ -1,3 +1,5 @@
+import { loadShard } from "./data-store.js";
+
 const DATA_DIR = "./data";
 let reportError = (msg) => console.error(msg);
 
@@ -399,48 +401,35 @@ async function main() {
     showError(msg);
   });
 
-  const checkDerivedAvailable = async () => {
-    try {
-      const res = await fetch(`${DATA_DIR}/derived_regions.geojson`, { method: "HEAD" });
-      return res.ok;
-    } catch (err) {
-      return false;
-    }
-  };
-
   loadPrefs();
-  const derivedRadio = document.querySelector('input[name="baseUnit"][value="derived"]');
-  if (derivedRadio) {
-    const ok = await checkDerivedAvailable();
-    derivedRadio.disabled = !ok;
-    if (!ok && derivedRadio.checked) {
-      const fallback = document.querySelector('input[name="baseUnit"][value="tract"]');
-      if (fallback) fallback.checked = true;
-      localStorage.setItem("atlas.baseUnit", "tract");
-      showError("Derived data missing. Run ./buildonly.sh to generate derived files.");
-    }
-  }
   let unit = getBaseUnit();
   let suffix = unit === "derived" ? "_derived" : "";
   let data;
   let neighborhoodsGeo;
+  const loadSelectedShard = () =>
+    loadShard({
+      unit,
+      profile: getProfile(),
+      hub: getHub(),
+      metric: "corridors",
+    });
   try {
     [data, neighborhoodsGeo] = await Promise.all([
-      fetchJson(`${DATA_DIR}/teleport_corridors${suffix}.json`),
+      loadSelectedShard(),
       fetchJson(`${DATA_DIR}/${unit === "derived" ? "derived_regions.geojson" : "neighborhoods.geojson"}`),
     ]);
   } catch (err) {
     if (suffix) {
       // Fallback to tract data if derived artifacts are missing.
+      unit = "tract";
+      suffix = "";
       [data, neighborhoodsGeo] = await Promise.all([
-        fetchJson(`${DATA_DIR}/teleport_corridors.json`),
+        loadSelectedShard(),
         fetchJson(`${DATA_DIR}/neighborhoods.geojson`),
       ]);
       const fallback = document.querySelector('input[name="baseUnit"][value="tract"]');
       if (fallback) fallback.checked = true;
       localStorage.setItem("atlas.baseUnit", "tract");
-      unit = "tract";
-      suffix = "";
       showError("Derived data missing. Falling back to Tracts. Run ./buildonly.sh to rebuild derived data.");
     } else {
       throw err;
@@ -695,13 +684,11 @@ async function main() {
     const includeInner = !!document.getElementById("includeInner")?.checked;
     const spokeMode = getSpokeMode();
     if (maxLabel) maxLabel.textContent = String(maxMinutes);
-    const win = data?.windows?.[profile];
-    const hubs = win?.hubs || {};
-    const hubMeta = hubs?.[hub];
+    const hubMeta = data?.hub;
     const hubLabel = hubMeta?.label || hub;
     if (hubLabelA) hubLabelA.textContent = hubLabel;
     if (hubLabelB) hubLabelB.textContent = hubLabel;
-    const corr = win?.corridors?.[hub] || {};
+    const corr = data || {};
     const underrated = corr?.top_underrated || [];
     const speed = corr?.top_speed || [];
     // Attach hub metadata so rows can preview correctly and never show "undefined".
@@ -821,14 +808,18 @@ async function main() {
   };
 
   for (const r of Array.from(document.querySelectorAll('input[name="profile"]'))) {
-    r.addEventListener("change", () => {
+    r.addEventListener("change", async () => {
       savePrefs();
+      setStatus("Loading…");
+      data = await loadSelectedShard();
       rerender();
     });
   }
   for (const r of Array.from(document.querySelectorAll('input[name="hub"]'))) {
-    r.addEventListener("change", () => {
+    r.addEventListener("change", async () => {
       savePrefs();
+      setStatus("Loading…");
+      data = await loadSelectedShard();
       rerender();
     });
   }

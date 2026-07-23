@@ -49,4 +49,6 @@ python3 tools/build_derived.py \
   --matrix-dir "$OUT" \
   --out "$OUT"
 
+python3 tools/build_shards.py --out "$OUT"
+
 echo "Built data into $OUT"
