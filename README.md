@@ -39,18 +39,28 @@ Derived neighborhoods are built from micro-units assigned to their nearest stati
 
 The static build exposes a query surface keyed by base unit, time window, hub, and metric. Hub interactions fetch one precomputed JSON shard and keep it in an in-memory cache. OD minutes and first-route values are stored as flat little-endian `Int16` planes; the browser loads each selected time window once and performs indexed O(1) reads. Judge Mode shards also contain precomputed disqualification sets for the three presets.
 
-Measured on 2026-07-23 with Chrome against Python's local static HTTP server. Each before/after cold-load run used a new origin; interaction latency is `performance.now()` from control activation through completed fetches and two animation frames. These are local-machine measurements, not simulated production-network estimates.
+Geometry is also compacted at build time without a runtime dependency. Coordinates are rounded to five decimal places (about one metre in NYC), polygon rings use a `0.0004°` Douglas–Peucker tolerance (about 34–44 metres at NYC latitudes), and adjacent derived grid cells are dissolved by cancelling shared edges before simplification. Rings that would become open, degenerate, self-intersecting, or reverse orientation fall back to their rounded input.
 
-| Measurement | Before | After | Result |
+Measured on 2026-07-23 with Chrome against Python's local static HTTP server. Each cold-load run used a new origin; interaction latency is `performance.now()` from control activation through completed fetches and two animation frames. These are local-machine measurements, not simulated production-network estimates. The geometry baseline was recorded immediately before the geometry follow-up, after sharding was already in place.
+
+| Geometry follow-up measurement | Before | After | Result |
 |---|---:|---:|---:|
-| Decide loaded-state latency | 121.8 ms | 92.2 ms | 24% faster |
-| Decide time-window switch, median of 4 | 97.3 ms | 58.8 ms | 40% faster |
-| Decide hub switch, median of 5 | 33.2 ms | 33.4 ms | No material change |
-| Corridors hub switch, median of 5 | 33.2 ms | 33.3 ms | No material change |
+| Decide cold loaded-state latency | 141.0 ms | 77.3 ms | 45% faster |
+| Decide cold transfer bytes | 6,901,996 B | 1,478,863 B | 79% smaller |
+| Geometry transferred on default Decide load | 5,922,730 B (both files) | 327,501 B (selected file only) | 94% smaller |
+| Built geometry artifacts, combined | 5,922,730 B | 820,894 B | 86% smaller |
+| Decide time-window switch, median of 4 | 58.8 ms | 59.2 ms | No material change |
+| Decide hub switch, median of 5 | 33.4 ms | 33.3 ms | No material change |
+| Corridors hub switch, median of 5 | 33.3 ms | 33.4 ms | No material change |
+
+The preceding shard/matrix reorganization produced these measured payload changes:
+
+| Interactive payload | Before | After | Result |
+|---|---:|---:|---:|
 | Derived AM matrix transfer/parse payload | 1,637,896 B JSON | 577,600 B binary + 57,570 B index | 61% smaller |
 | Derived Corridors interaction payload | 3,082,816 B monolith | 19,630–138,289 B shard + one 19,479 B manifest | 95–99% smaller per new hub |
 
-On the local server, map paint and DOM work dominate hub-switch timing after data is resident, so the measured latency is flat rather than claiming an unobserved win. The large measured improvement is removal of multi-megabyte parsing and transfer from the interactive path; that should matter more over a real network, but no unmeasured production figure is claimed here.
+On the local server, map paint and DOM work dominate warm interaction timing after data is resident, so those measurements remain flat rather than claiming an unobserved win. No production-network result is estimated here.
 
 ---
 

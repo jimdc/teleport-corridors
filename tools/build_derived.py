@@ -40,6 +40,11 @@ import sys
 from collections import defaultdict
 from typing import Dict, Iterable, List, Optional, Tuple
 
+try:
+    from tools.compact_geojson import write_compact_geojson
+except ModuleNotFoundError:  # Direct invocation: python3 tools/build_derived.py
+    from compact_geojson import write_compact_geojson
+
 from build_matrix import (
     compute_hub_corridors,
     harmonic_centrality_from_minutes_row,
@@ -538,8 +543,7 @@ def main() -> int:
                     props["scalars"] = scalars
                     feat["properties"] = props
             if updated:
-                with open(base_geo_out, "w", encoding="utf-8") as f:
-                    json.dump(base_geo, f)
+                write_compact_geojson(base_geo_out, base_geo)
         except Exception:
             pass
 
@@ -907,8 +911,10 @@ def main() -> int:
     print(f"Wrote {micro_out}", file=sys.stderr)
 
     derived_out = os.path.join(out_dir, "derived_regions.geojson")
-    with open(derived_out, "w", encoding="utf-8") as f:
-        json.dump({"type": "FeatureCollection", "features": derived_features}, f)
+    write_compact_geojson(
+        derived_out,
+        {"type": "FeatureCollection", "features": derived_features},
+    )
     print(f"Wrote {derived_out}", file=sys.stderr)
 
     # Build derived matrices per profile.

@@ -11,10 +11,12 @@ sources:
   - tools/run_local.py
   - tools/build_matrix.py
   - tools/build_derived.py
+  - tools/compact_geojson.py
   - tools/build_shards.py
+  - site/app.js
   - site/data-store.js
   - site/index.html
-sources_hash: dcc82b0c38ff2d6be3cfbd9a03c8c2cf30f2afd0bd7a7af72c975361fbe1e0e5
+sources_hash: 9c90326ee700926bbe79f6541f13c6fa97614968cef0f74073dba3dcdda56d1b
 ---
 
 # teleport-corridors — architecture
@@ -43,6 +45,7 @@ tools/build_matrix.py
   ├─ build stop graph; Dijkstra → NxN transit-minutes matrix
   │    (3 profiles: weekday AM, weekday PM, weekend)
   ├─ compute hub corridors, harmonic centrality, median minutes
+  ├─ compact base geometry (5-decimal coordinates, 0.0004° simplification)
   └─ emit → site/data/graph_<profile>.json
              site/data/matrix_<profile>.json
              site/data/teleport_corridors.json
@@ -53,6 +56,7 @@ tools/build_derived.py
   ├─ assign micro-units to nearest station (haversine Voronoi)
   ├─ name derived regions via gazetteer (data/raw/neighborhoods_gazetteer.geojson)
   ├─ compute derived matrices + teleportness scores
+  ├─ dissolve grid cells and compact derived geometry
   └─ emit → site/data/micro_units.geojson
              site/data/matrix_<profile>_derived.json
              site/data/graph_<profile>_derived.json
@@ -77,7 +81,7 @@ site/ (static HTML + vanilla JS)
   ├─ centrality.html  Network centrality rankings
   ├─ living.html      Cartogram (area rescaled by population / units / jobs)
   ├─ views.html       Multi-view switcher
-  ├─ app.js           Shared state, map rendering, hub-bar
+  ├─ app.js           Shared state, map rendering, hub-bar, lazy geometry loader
   ├─ data-store.js    Cached shard + typed-array matrix loader
   ├─ style.css
   ├─ glossary.html
@@ -100,7 +104,8 @@ Orchestration locally: `./buildandrun.sh` → `tools/run_local.py` →
   - `shards/manifest.json` + `shards/<unit>/<profile>/<hub>/<metric>.json` — browser-facing query shards (200 KB hard cap)
   - `graph_<profile>.json` — stop-level graph with edge weights
   - `teleport_corridors.json` / `teleport_corridors_derived.json` — hub-to-spoke corridor rankings + teleportness scores
-  - `neighborhoods.geojson`, `micro_units.geojson` — base and derived neighborhood geometries
+  - `neighborhoods.geojson`, `derived_regions.geojson` — compact browser-facing geometries, fetched one base unit at a time
+  - `micro_units.geojson` — build/debug micro-unit geometry
   - `scalars_population.csv`, `scalars_housing_units.csv`, `scalars_jobs.csv` — per-neighborhood scalar metrics for cartogram + Judge Mode
 - **`data/raw/`** — gitignored inputs: `subway_gtfs.zip`, `neighborhoods.geojson`, optional `neighborhoods_gazetteer.geojson`
 - No per-user server-side state; `localStorage` holds UI preferences only.

@@ -1459,11 +1459,25 @@ async function main() {
   let viewsReachableCache = new Map();
 
   let tractsGeo = null;
-  let tractsScalars = new Map();
+  let tractsScalars = null;
+  let tractsLoaded = false;
   let derivedGeo = null;
   let derivedScalars = null;
   let derivedLoaded = false;
   let geoMetaById = new Map();
+
+  const ensureTractsGeo = async () => {
+    if (tractsLoaded) return tractsGeo;
+    tractsLoaded = true;
+    try {
+      tractsGeo = await fetchJson(`${DATA_DIR}/neighborhoods.geojson`);
+      tractsScalars = await attachScalars(tractsGeo?.features || []);
+    } catch (err) {
+      tractsGeo = null;
+      tractsScalars = null;
+    }
+    return tractsGeo;
+  };
 
   const ensureDerivedGeo = async () => {
     if (derivedLoaded) return derivedGeo;
@@ -1480,8 +1494,8 @@ async function main() {
 
   const applyBaseUnit = async () => {
     let unit = getBaseUnit();
-    let geo = tractsGeo;
-    let scalars = tractsScalars;
+    let geo = null;
+    let scalars = null;
 
     if (unit === "derived") {
       await ensureDerivedGeo();
@@ -1496,8 +1510,13 @@ async function main() {
         showError("Derived data missing. Run ./buildonly.sh to generate derived files.");
       }
     }
+    if (unit === "tract") {
+      await ensureTractsGeo();
+      geo = tractsGeo;
+      scalars = tractsScalars || new Map();
+    }
 
-    scalarValuesByKey = scalars;
+    scalarValuesByKey = scalars || new Map();
     const triFeatures = (geo?.features || []).filter((f) => isTriBorough(getBorough(f?.properties || {})));
     visibleGeo = triFeatures.length > 0 ? { type: "FeatureCollection", features: triFeatures } : geo;
     geoMetaById = new Map();
@@ -4405,8 +4424,6 @@ async function main() {
     clearError();
     try {
       availableScalarKeys = await loadScalarManifest();
-      tractsGeo = await fetchJson(`${DATA_DIR}/neighborhoods.geojson`);
-      tractsScalars = await attachScalars(tractsGeo?.features || []);
       await applyBaseUnit();
       await loadMatrix(getProfile());
       render();

@@ -13,6 +13,11 @@ import sys
 import zipfile
 from typing import Dict, List, Optional, Set, Tuple
 
+try:
+    from tools.compact_geojson import write_compact_geojson
+except ModuleNotFoundError:  # Direct invocation: python3 tools/build_matrix.py
+    from compact_geojson import write_compact_geojson
+
 
 def parse_gtfs_time_to_seconds(value: Optional[str]) -> Optional[int]:
     if value is None:
@@ -877,8 +882,7 @@ def main():
         feat["properties"] = props
 
     neighborhoods_geo_out = os.path.join(out_dir, "neighborhoods.geojson")
-    with open(neighborhoods_geo_out, "w", encoding="utf-8") as f:
-        json.dump(neighborhoods_geo, f)
+    write_compact_geojson(neighborhoods_geo_out, neighborhoods_geo)
 
     rep_stops = [n["stop_id"] for n in neighborhoods]
     if any(s is None for s in rep_stops):
