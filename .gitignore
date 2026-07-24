@@ -4,3 +4,12 @@ __pycache__/
 
 # Inputs you download locally
 data/raw/
+
+# agent/estate scaffolding stays local, never public
+AGENTS.md
+CLAUDE.md
+backlog/
+PAPERCUTS.md
+.scrimignore
+.claude/
+.agents/
