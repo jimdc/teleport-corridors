@@ -26,7 +26,7 @@ context:
   - site/app.js
   - site/teleport-corridors.js
   - site/data/
-verify: "test -f /Users/james/dev/teleport-corridors/site/data/shards/manifest.json && python3 -c \"import os,glob; s=[os.path.getsize(p) for p in glob.glob('/Users/james/dev/teleport-corridors/site/data/shards/*.json')]; assert s and max(s) < 200_000, 'shards must stay small'\""
+verify: "test -f site/data/shards/manifest.json && python3 -c \"import os,glob; s=[os.path.getsize(p) for p in glob.glob('site/data/shards/*.json')]; assert s and max(s) < 200_000, 'shards must stay small'\""  # run from repo root
 needs_james: null
 session: null
 ---
